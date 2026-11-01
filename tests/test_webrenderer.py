@@ -154,6 +154,7 @@ from tests.markdown import HelpMainView, HelpViewerMainView
 from tests.metrics import JobsMainView
 from tests.pages import InputsPage, PagesMainView
 from tests.partial import PartialMainView, UnregisteredView
+from tests.settingsdialog import NO_FOLDER, SettingsMainView
 from tests.sidebar import SidebarMainView
 from tests.splitter import SplitterMainView, VerticalSplitterMainView
 from tests.studydialog import StudyDialogMainView
@@ -4564,6 +4565,44 @@ def test_a_content_dialog_shows_its_view_whose_buttons_leave_it_open(
     assert view.open_dialog.is_visible
     assert f'id="{dialog_id}"' not in body  # left as the user has it
     assert "notes.txt" in _swapped(body, table_id).text
+
+
+def test_a_dialog_s_own_buttons_and_check_show_on_the_web_and_act_on_their_posts() -> None:
+    views: list[SettingsMainView] = []
+
+    class SettingsApp(WebApplication[SettingsMainView]):
+        def setup_session(self, main_view: SettingsMainView) -> None:
+            main_view.settings.open()
+            views.append(main_view)
+
+    with _Browser(SettingsApp(build_main_view=SettingsMainView).create_starlette_app()) as client:
+        page = client.get("/").text
+        (view,) = views
+        settings = view.settings
+        dialog_id = _widget_id(settings.renderer)
+        apply_id, discard_id = (
+            _widget_id(settings.apply.renderer),
+            _widget_id(settings.discard.renderer),
+        )
+        log_id = _widget_id(settings.log_view.renderer)
+        field_id = _widget_id(settings.content.folder.renderer)
+        dialog = _element(page, dialog_id)
+        assert all(_contains(dialog, element_id) for element_id in (apply_id, discard_id, log_id))
+        footer = [attributes.get("id") for tag, attributes in dialog.descendants if tag == "button"]
+        assert footer[-3:] == [apply_id, discard_id, f"{dialog_id}-accept"]  # after Cancel
+
+        body = client.post(f"/widget/{field_id}", data={"event": "input", "value": ""}).text
+        assert NO_FOLDER in _swapped(body, log_id).text
+        assert "disabled" in _swapped(body, f"{dialog_id}-accept").attributes
+        assert "disabled" in _swapped(body, apply_id).attributes
+        assert client.post(f"/widget/{apply_id}", data={"event": "click"}).status_code == 400
+
+        client.post(f"/widget/{field_id}", data={"event": "input", "value": "out"})
+        body = client.post(f"/widget/{apply_id}", data={"event": "click"}).text
+        assert f'id="{dialog_id}"' not in body  # left open, as the user has it
+        body = client.post(f"/widget/{discard_id}", data={"event": "click"}).text
+        assert "hidden" in _swapped(body, dialog_id).attributes
+    assert view.answers == ["apply", "discard"]
 
 
 @pytest.fixture

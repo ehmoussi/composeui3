@@ -305,7 +305,10 @@ It shows:
   [resizable panes](user-guide/organizing-the-window.md#resizable-panes). The materials are bold. A
   pipe has a done mark when its installation date is known, and a warning mark until then. When the
   user selects a pipe in the tree, its expander expands.
-- a [form dialog](user-guide/organizing-the-window.md#form-dialogs) that edits a pipe;
+- a [form dialog](user-guide/organizing-the-window.md#form-dialogs) that edits a pipe. Its
+  [Apply button](user-guide/organizing-the-window.md#buttons-and-checks-of-a-dialog) saves the
+  pipe and leaves the dialog open. The dialog checks that no other pipe has the name, and
+  shows why the database refuses a pipe;
 - a [date input](user-guide/widgets.md#date-input) for the installation date of a pipe;
 - studies saved as a `.pipes` file with the views and the database. A study saved before
   pipes had an installation date gets the column, empty, when it opens, through a

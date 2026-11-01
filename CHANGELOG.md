@@ -25,6 +25,14 @@ The notable changes of each release of ComposeUI. The format follows
   only once the user agrees to replace the file. When the user already agreed in the field's
   picker (`is_replace_agreed`), it doesn't ask again. The study inputs example saves a
   summary of its table this way.
+- `DialogButtonView`, a button of a form or content dialog's own between Cancel and OK, such
+  as Apply: it leaves the dialog open, or closes it with `closes=True`, and waits for the
+  dialog's checks unless `checks=False`. `add_check` adds a check of the dialog's own, about
+  any view it shows: its message stays in the dialog, and OK waits for it. `accepting` fires
+  on OK while the dialog is still open, and a refusal in the dialog's `refusing` shows in
+  the dialog and keeps it open. The base of the two dialogs is `OkCancelDialogView`. The
+  pipe catalogue's Edit dialog has Apply, checks that no other pipe has the name, and shows
+  why the database refuses a pipe.
 
 ## [0.2.0] - 2026-10-30
 

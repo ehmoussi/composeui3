@@ -157,6 +157,14 @@ the option for the web (extra `web`, the default).
   The app sets `is_accept_enabled`. To keep the dialog open on OK, override `accept()` and
   call `super().accept()` only to close it. See
   https://ehmoussi.github.io/composeui/user-guide/organizing-the-window.html#content-dialogs
+- **Give a dialog buttons of its own**, such as Apply, as `DialogButtonView` fields of a
+  form or content dialog: a click leaves the dialog open unless `closes=True`, and waits for
+  the checks unless `checks=False`. Check any view the dialog shows with
+  `dialog.add_check(validator, *signals)`, where the validator returns a message or `None`.
+  Save from `accepting` (OK, the dialog still open) or from a button's `clicked`, inside
+  `with dialog.refusing("...{error}"):`, so that a model's refusal shows in the dialog and
+  keeps it open. See
+  https://ehmoussi.github.io/composeui/user-guide/organizing-the-window.html#buttons-and-checks-of-a-dialog
 - **Support Python 3.9 in view fields.** Write `Optional[int]` and `Union[int, str]`, not
   `int | None`, because `attrs` and `cattrs` evaluate the annotations at runtime. Start
   every module with `from __future__ import annotations`, and do not quote annotations.

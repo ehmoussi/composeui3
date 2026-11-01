@@ -33,6 +33,7 @@ from composeui.core.view import (
     ChartKind,
     ChartView,
     ConsoleView,
+    DialogButtonView,
     DialogKind,
     DialogView,
     ExpanderView,
@@ -500,19 +501,28 @@ class TextualFormDialogRenderer(TextualDialogRenderer):
         self._form_view = view
         self.form_screen: ComposeFormDialog | None = None
         self._refresh_dispatcher["is_accept_enabled"] = self._refresh_is_accept_enabled
+        self._refresh_dispatcher["has_failing_check"] = self._refresh_has_failing_check
 
     def render(self) -> None:
         if self._rendered_object is None:
             super().render()
-            content = _widget_of(self._form_view.content)
+            view = self._form_view
+            content = _widget_of(view.content)
             assert content is not None
-            self.form_screen = ComposeFormDialog(content)
+            log = _widget_of(view.log_view)
+            assert log is not None
+            buttons = [_widget_of(button) for button in view.buttons]
+            self.form_screen = ComposeFormDialog(
+                content, log, [button for button in buttons if button is not None]
+            )
             self.form_screen.answered.connect(self._answer_form)
             # its form's widgets mount with it, first pushed: their state only then
             self.form_screen.mounted.connect(self._refresh_screen)
 
     def _refresh_screen(self) -> None:
-        _refresh_tree(self._form_view.content)
+        view = self._form_view
+        for shown in (view.content, view.log_view, *view.buttons):
+            _refresh_tree(shown)
         self.refresh()  # the screen's title, text and buttons
 
     def _answer_form(self, answer: str) -> None:
@@ -537,7 +547,7 @@ class TextualFormDialogRenderer(TextualDialogRenderer):
     ) -> None:
         assert self.form_screen is not None
         self.form_screen.reject_button.disabled = not value
-        self.form_screen.accept_button.disabled = not (value and self._form_view.is_accept_enabled)
+        self.form_screen.accept_button.disabled = not (value and self._form_view.can_accept)
 
     def _refresh_title(self, _view: DialogView, _rendered_object: DialogView, value: str) -> None:
         assert self.form_screen is not None
@@ -564,11 +574,20 @@ class TextualFormDialogRenderer(TextualDialogRenderer):
         assert self.form_screen is not None
         self.form_screen.reject_button.label = Content(value)
 
+    # each is told its own field's new value, not yet the view's
     def _refresh_is_accept_enabled(
         self, _view: DialogView, _rendered_object: DialogView, value: bool
     ) -> None:
+        self._enable_accept(is_accepted=value and not self._form_view.has_failing_check)
+
+    def _refresh_has_failing_check(
+        self, _view: DialogView, _rendered_object: DialogView, value: bool
+    ) -> None:
+        self._enable_accept(is_accepted=self._form_view.is_accept_enabled and not value)
+
+    def _enable_accept(self, *, is_accepted: bool) -> None:
         assert self.form_screen is not None
-        self.form_screen.accept_button.disabled = not (value and self._view.is_enabled)
+        self.form_screen.accept_button.disabled = not (is_accepted and self._view.is_enabled)
 
 
 class InputViewLike(ViewLike, Protocol):
@@ -1448,6 +1467,42 @@ class TextualButtonRenderer(TextualWidgetRenderer[ButtonViewLike, ComposeButton]
         _view: ButtonViewLike, rendered_object: ComposeButton, value: ButtonVariant
     ) -> None:
         rendered_object.variant = _BUTTON_VARIANTS[value]
+
+
+class TextualDialogButtonRenderer(TextualButtonRenderer):
+    """A dialog's own button, e.g. Apply: its click goes through its dialog, which checks first."""
+
+    def __init__(self, view: DialogButtonView) -> None:
+        super().__init__(view)
+        self._dialog_button = view
+        self._refresh_dispatcher.update(
+            {
+                "is_enabled": self._refresh_button_enabled,
+                "is_blocked": self._refresh_is_blocked,
+                "closes": self._noop,
+                "checks": self._noop,
+            }
+        )
+
+    def render(self) -> None:
+        if self._rendered_object is None:
+            self._rendered_object = ComposeButton()
+            self._rendered_object.clicked.connect(self._dialog_button.click)
+
+    # each is told its own field's new value, not yet the view's
+    def _refresh_button_enabled(
+        self, _view: ButtonViewLike, rendered_object: ComposeButton, value: bool
+    ) -> None:
+        rendered_object.disabled = not (value and not self._dialog_button.is_blocked)
+
+    def _refresh_is_blocked(
+        self, _view: ButtonViewLike, rendered_object: ComposeButton, value: bool
+    ) -> None:
+        rendered_object.disabled = not (self._dialog_button.is_enabled and not value)
+
+    @staticmethod
+    def _noop(_view: ButtonViewLike, _rendered_object: ComposeButton, _value: bool) -> None:
+        pass  # read on each click
 
 
 class ProgressBarViewLike(ViewLike, Protocol):
@@ -3143,6 +3198,7 @@ class TextualMainRenderer(MainRenderer[MainView, _ComposeUIApp]):
 RENDERERS: dict[str, Callable[[Any], Renderer[Any, Any]]] = {
     "action": TextualActionRenderer,
     "button": TextualButtonRenderer,
+    "dialog_button": TextualDialogButtonRenderer,
     "chart": TextualChartRenderer,
     "checkbox": TextualCheckBoxRenderer,
     "combobox": TextualComboBoxRenderer,
