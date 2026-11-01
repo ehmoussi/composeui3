@@ -39,6 +39,7 @@ not in the package: run them from a clone of the repository (see
   - [Label](user-guide/widgets.md#label)
   - [Buttons](user-guide/widgets.md#buttons)
   - [Help on a form row](user-guide/widgets.md#help-on-a-form-row)
+  - [Text area](user-guide/widgets.md#text-area)
   - [Integer input](user-guide/widgets.md#integer-input)
   - [Date input](user-guide/widgets.md#date-input)
   - [File path input](user-guide/widgets.md#file-path-input)

@@ -388,7 +388,6 @@ The widget backlog (W items) comes from a scientific desktop app. Dashboards nee
 widgets first:
 
 - **An image**, from a file, bytes, or a Matplotlib figure.
-- **A text area** of several lines.
 - **A download button** for any file or bytes that the app makes. Today only chart images and
   table CSV exports download.
 - **A toggle**, a **range slider**, and a **date range** input.

@@ -142,6 +142,7 @@ __all__ = [
     "LabelRowRadioGroupView",
     "LabelRowSavePathInputView",
     "LabelRowSliderView",
+    "LabelRowTextAreaView",
     "LabelView",
     "LanguageMenu",
     "LineStyle",
@@ -178,6 +179,7 @@ __all__ = [
     "RowRadioGroupView",
     "RowSavePathInputView",
     "RowSliderView",
+    "RowTextAreaView",
     "SavePathInputMixin",
     "SavePathInputView",
     "SelectionMode",
@@ -197,6 +199,8 @@ __all__ = [
     "TableMixin",
     "TableSource",
     "TableView",
+    "TextAreaMixin",
+    "TextAreaView",
     "TextStyle",
     "ToolBar",
     "TreeNode",
@@ -1360,6 +1364,25 @@ class InputView(InputMixin, View):
     """A field where the user types one line of text, for example a name."""
 
     _renderer_key = "input"
+
+
+@define_view
+class TextAreaMixin(_InputView):
+    """The fields of a field for several lines of text: its `text` and its signals."""
+
+    # properties
+    text: str = attrs.field(default="")
+
+
+@define_view
+class TextAreaView(TextAreaMixin, View):
+    """A field where the user types several lines of text, for example a comment.
+
+    `editing_finished` is emitted when the field loses the focus after a change: Enter
+    starts a new line.
+    """
+
+    _renderer_key = "text_area"
 
 
 @define_view
@@ -5189,6 +5212,20 @@ class LabelRowInputView(FormLabelRowView, InputMixin):
     """A row of a form with a label and a field for one line of text."""
 
     _field_renderer_key = "input"
+
+
+@define_view
+class RowTextAreaView(FormRowView, TextAreaMixin):
+    """A row of a form with a field for several lines of text, without a label."""
+
+    _field_renderer_key = "text_area"
+
+
+@define_view
+class LabelRowTextAreaView(FormLabelRowView, TextAreaMixin):
+    """A row of a form with a label and a field for several lines of text."""
+
+    _field_renderer_key = "text_area"
 
 
 @define_view

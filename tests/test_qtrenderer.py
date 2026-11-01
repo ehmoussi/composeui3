@@ -49,6 +49,7 @@ from qtpy.QtWidgets import (
     QMainWindow,
     QMenu,
     QMessageBox,
+    QPlainTextEdit,
     QProgressBar,
     QPushButton,
     QRadioButton,
@@ -103,6 +104,7 @@ from composeui.core.view import (
     SourceTableView,
     T,
     TableView,
+    TextAreaView,
     TreeNode,
     replace_cell,
 )
@@ -688,12 +690,13 @@ def test_a_failing_pipe_check_outlines_the_fields_it_names(qtbot: QtBot) -> None
         (InputView(), lambda view: view.text),
         (FloatInputView(), lambda view: view.value),
         (IntInputView(), lambda view: view.value),
+        (TextAreaView(), lambda view: view.text),
     ],
-    ids=["text", "float", "int"],
+    ids=["text", "float", "int", "text_area"],
 )
 def test_an_edit_is_reported_once_the_view_has_it(
     qtbot: QtBot,
-    view: InputView | FloatInputView | IntInputView,
+    view: InputView | FloatInputView | IntInputView | TextAreaView,
     read: Callable[[Any], object],
 ) -> None:
     """A check run on each edit (`text_edited`) reads the edited value, not the one before."""
@@ -708,6 +711,43 @@ def test_an_edit_is_reported_once_the_view_has_it(
     qtbot.keyClicks(field, "42")
 
     assert seen[-2:] in (["4", "42"], [4.0, 42.0], [4, 42])
+
+
+def test_a_text_area_takes_several_lines_and_finishes_editing_when_left_after_a_change(
+    qtbot: QtBot,
+) -> None:
+    view = PipeMainView()
+    view.render(RendererType.QT)
+    window = _widget(view)
+    qtbot.addWidget(window)
+    window.show()
+    # active, for the area to take the focus and lose it
+    with qtbot.waitActive(window):
+        window.activateWindow()
+    comment = view.pages.inputs.pipe_form.comment
+    area = _field_widget(comment)
+    assert isinstance(area, QPlainTextEdit)
+    finished: list[None] = []
+    comment.editing_finished.connect(lambda: finished.append(None))
+    area.setFocus()
+    qtbot.waitUntil(area.hasFocus)
+
+    qtbot.keyClicks(area, "North")
+    qtbot.keyClick(area, Qt.Key.Key_Return)
+    qtbot.keyClicks(area, "side")
+
+    assert comment.text == "North\nside"
+    assert finished == []  # Enter starts a new line
+    qtbot.keyClick(area, Qt.Key.Key_Tab)
+    assert not area.hasFocus()  # Tab goes to the next field, not into the text
+    assert finished == [None]
+
+    comment.text = "Set by the app"
+    area.setFocus()
+    qtbot.keyClick(area, Qt.Key.Key_Tab)
+
+    assert area.toPlainText() == "Set by the app"
+    assert finished == [None]  # left without a change
 
 
 def test_float_input_renderer_round_trips_typed_value_and_rejects_bad_input(qtbot: QtBot) -> None:

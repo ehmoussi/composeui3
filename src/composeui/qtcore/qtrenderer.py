@@ -126,6 +126,7 @@ from composeui.qtcore.widgets.qradiogroup import QRadioGroup
 from composeui.qtcore.widgets.qsidebar import QSidebar
 from composeui.qtcore.widgets.qsourcetable import QDataFilterTable
 from composeui.qtcore.widgets.qsplitter import QComposeSplitter
+from composeui.qtcore.widgets.qtextarea import QTextArea
 from composeui.qtcore.widgets.qvaluecombobox import QValueComboBox
 from composeui.qtcore.widgets.qvalueslider import QValueSlider
 from composeui.qtcore.widgets.qwindowrelease import release_when_hidden
@@ -272,6 +273,42 @@ class QtInputRenderer(QtWidgetRenderer[InputViewLike, QLineEdit]):
 
     @staticmethod
     def _refresh_placeholder(_view: InputViewLike, rendered_object: QLineEdit, value: str) -> None:
+        rendered_object.setPlaceholderText(value)
+
+    def _update_text(self, text: str) -> None:
+        with self.stop_refresh():
+            self._view.text = text
+
+
+class QtTextAreaRenderer(QtWidgetRenderer[InputViewLike, QTextArea]):
+    _invalid_style = "QPlainTextEdit { border: 1px solid red; }"
+
+    def __init__(self, view: InputViewLike) -> None:
+        super().__init__(view)
+        self._refresh_dispatcher.update(
+            {
+                "text": self._refresh_text,
+                "placeholder": self._refresh_placeholder,
+            }
+        )
+
+    def render(self) -> None:
+        if self._rendered_object is None:
+            self._rendered_object = QTextArea()
+            self._rendered_object.text_changed.connect(self._update_text)
+            self._view.editing_finished.add_qt_signal(self._rendered_object.editing_finished)
+            # the text only changes without signals from the view: each change is an edit
+            self._view.text_changed.add_qt_signal(self._rendered_object.text_changed)
+            self._view.text_edited.add_qt_signal(self._rendered_object.text_changed)
+            self.refresh()
+
+    @staticmethod
+    def _refresh_text(_view: InputViewLike, rendered_object: QTextArea, value: str) -> None:
+        if value != rendered_object.toPlainText():  # the same text keeps the caret
+            rendered_object.setPlainText(value)
+
+    @staticmethod
+    def _refresh_placeholder(_view: InputViewLike, rendered_object: QTextArea, value: str) -> None:
         rendered_object.setPlaceholderText(value)
 
     def _update_text(self, text: str) -> None:
@@ -3140,6 +3177,7 @@ RENDERERS: dict[str, Callable[[Any], Renderer[Any, Any]]] = {
     "splitter": QtSplitterRenderer,
     "status_bar": QtStatusBarRenderer,
     "table": QtTableRenderer,
+    "text_area": QtTextAreaRenderer,
     "tab_page": QtTabPageRenderer,
     "tabs": QtTabsRenderer,
     "toolbar": QtToolBarRenderer,

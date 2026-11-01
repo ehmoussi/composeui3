@@ -17,6 +17,8 @@
   "Insulated pipe": "Conduite isolée",
   "Insulation Thickness": "Épaisseur d'isolation",
   "Name": "Nom",
+  "Comment": "Commentaire",
+  "Notes on the junction, on several lines": "Remarques sur la jonction, sur plusieurs lignes",
   "A name is mandatory": "Un nom est obligatoire",
   "Main Pipe": "Conduite principale",
   "Incident Pipe": "Conduite incidente",
