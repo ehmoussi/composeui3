@@ -1915,10 +1915,16 @@ def test_a_tab_view_is_a_tab_list_posting_the_tab_picked_never_swapped_back() ->
     assert [b["tabindex"] for b in buttons] == ["0", "-1", "-1"]
     assert ["hidden" in panel for panel in panels] == [False, True, True]
     assert [b["aria-controls"] for b in buttons] == [p["id"] for p in panels]
+    # only the current tab's views are sent
+    assert "Length: 12 m" in root.text
+    assert "Created on Monday" not in root.text
 
     fragments = handle_event(renderer, "select", {"index": "1"})
     assert (tabs.current_index, picks) == (1, [1])
     assert renderer.widget_id not in fragments  # the browser shows it already
+    # the answer fills the tab picked and empties the tab left
+    assert _swapped(fragments, _widget_id(tabs.history.renderer)).text == "Created on Monday"
+    assert _swapped(fragments, _widget_id(tabs.details.renderer)).descendants == []
     for index in ("1", "7", "x"):  # the tab shown, or none: nothing changes
         handle_event(renderer, "select", {"index": index})
     assert (tabs.current_index, picks) == (1, [1])
@@ -1926,11 +1932,14 @@ def test_a_tab_view_is_a_tab_list_posting_the_tab_picked_never_swapped_back() ->
     def rename() -> None:
         tabs.history.title = "<Changes>"
         tabs.notes.is_visible = False
+        tabs.details.length.text = "Length: 15 m"  # on a tab not shown: not sent
 
     tabs.details.edit.clicked.connect(rename)
     edit = tabs.details.edit.renderer
     assert isinstance(edit, WebRenderer)
-    swapped = _swapped(handle_event(edit, "click", {}), renderer.widget_id)
+    fragments = handle_event(edit, "click", {})
+    assert "Length: 15 m" not in fragments
+    swapped = _swapped(fragments, renderer.widget_id)
     buttons = [a for _, a in swapped.descendants if a.get("role") == "tab"]
     assert "<Changes>" in swapped.text  # escaped, shown as text
     assert ["hidden" in b for b in buttons] == [False, False, True]

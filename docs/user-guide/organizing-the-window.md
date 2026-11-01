@@ -114,7 +114,8 @@ The view starts on the first tab. Code shows another tab with `current_index`, c
   their own.
 
 Qt shows a `QTabWidget`, Textual a `TabbedContent`, and the web a row of tabs. On the web,
-the arrow keys move between the tabs.
+the arrow keys move between the tabs. The web sends only the shown tab's views: a tab's views
+arrive when the user picks it.
 [`src/examples/pipechart.py`](../../src/examples/pipechart.py) shows its chart on one tab, and
 the measurements plotted on it, as a table, on another tab.
 
