@@ -472,6 +472,43 @@ class WebInputRenderer(_WebTextFieldRenderer[InputViewLike]):
             self._view.text = text
 
 
+class WebTextAreaRenderer(WebInputRenderer):
+    """A `<textarea>`, posting its edits as `WebInputRenderer` does.
+
+    Its `change`, when it loses the focus after a change, emits `editing_finished`: Enter
+    starts a new line, and posts nothing.
+    """
+
+    _role = "text_area"
+
+    def to_html(self, *, oob: bool = False) -> Markup:
+        disabled = "" if self.is_enabled else " disabled"
+        return Markup(
+            "<textarea {root_attributes}{row_attributes}"
+            ' class="textarea w-full" rows="4"'
+            ' name="value" placeholder="{placeholder}"'
+            ' hx-post="/widget/{widget_id}"'
+            ' hx-trigger="input changed delay:300ms, change"'
+            ' data-post-event hx-swap="none" hx-sync="this:queue all"'
+            ' autocomplete="off"'
+            # the parser drops a new line just after the tag: this one, not the text's
+            "{disabled}>\n{text}</textarea>"
+        ).format(
+            root_attributes=self._root_attributes(oob=oob),
+            row_attributes=self._row_attributes(),
+            placeholder=self._view.placeholder,
+            widget_id=self.widget_id,
+            disabled=disabled,
+            text=self._text(),
+        )
+
+    def dispatch(self, event: str, form: Mapping[str, str]) -> None:
+        # a form's encoding ends the lines with CRLF; the view's text with LF, as typed
+        if "value" in form:
+            form = {**form, "value": form["value"].replace("\r\n", "\n")}
+        super().dispatch(event, form)
+
+
 class _NumberFieldViewLike(TextFieldViewLike, Protocol):
     value: Any
 
@@ -6092,6 +6129,7 @@ RENDERERS: Final[dict[str, Callable[[Any], Renderer[Any, Any]]]] = {
     "splitter": WebSplitterRenderer,
     "status_bar": WebStatusBarRenderer,
     "table": WebTableRenderer,
+    "text_area": WebTextAreaRenderer,
     "tab_page": WebTabPageRenderer,
     "tabs": WebTabsRenderer,
     "toolbar": WebToolBarRenderer,

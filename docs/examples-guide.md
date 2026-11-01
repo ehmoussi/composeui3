@@ -105,7 +105,7 @@ On the web:
 It shows:
 
 - [forms](user-guide/building-views.md#forms-and-their-fields) with labelled rows: text, float
-  inputs, a checkbox, radio groups, and a combobox;
+  inputs, a checkbox, radio groups, a combobox, and a comment of several lines;
 - validation on a row, such as the name, and across rows, such as a main pipe that must
   fit the incident pipe;
 - three [pages](user-guide/organizing-the-window.md#pages): Inputs, Results (a read-only table of

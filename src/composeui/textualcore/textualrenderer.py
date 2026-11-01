@@ -99,6 +99,7 @@ from composeui.textualcore.widgets.composeslider import ComposeSlider
 from composeui.textualcore.widgets.composesourcetable import ComposeDataFilterTable
 from composeui.textualcore.widgets.composesplitter import ComposeSplitter
 from composeui.textualcore.widgets.composetabbedcontent import ComposeTabbedContent
+from composeui.textualcore.widgets.composetextarea import ComposeTextArea
 from composeui.textualcore.widgets.composetoolbar import (
     ComposeToolbar,
     ComposeToolbarButton,
@@ -614,6 +615,52 @@ class TextualInputRenderer(TextualWidgetRenderer[InputViewLike, ComposeInput]):
 
     def _editing_finished(self) -> None:
         self._view.editing_finished.emit()
+
+
+class TextualTextAreaRenderer(TextualWidgetRenderer[InputViewLike, ComposeTextArea]):
+    _marks_invalid = True
+
+    def __init__(self, view: InputViewLike) -> None:
+        super().__init__(view)
+        self._is_edited = False
+        self._refresh_dispatcher.update(
+            {
+                "text": self._refresh_text,
+                "placeholder": self._refresh_placeholder,
+            }
+        )
+
+    def render(self) -> None:
+        if self._rendered_object is None:
+            self._rendered_object = ComposeTextArea()
+            self._rendered_object.value_changed.connect(self._update_text)
+            self._rendered_object.value_submitted.connect(self._editing_finished)
+
+    @staticmethod
+    def _refresh_text(_view: InputViewLike, rendered_object: ComposeTextArea, value: str) -> None:
+        if value != rendered_object.text:  # the same text keeps the cursor
+            rendered_object.text = value
+
+    @staticmethod
+    def _refresh_placeholder(
+        _view: InputViewLike, rendered_object: ComposeTextArea, value: str
+    ) -> None:
+        rendered_object.placeholder = value
+
+    def _update_text(self, text: str) -> None:
+        if text == self._view.text:  # the text the view set, not an edit
+            return
+        self._is_edited = True
+        with self.stop_refresh():
+            self._view.text = text
+        self._view.text_changed.emit(text)
+        self._view.text_edited.emit(text)
+
+    def _editing_finished(self) -> None:
+        # as Qt and the browser, only after a change: leaving the area doesn't commit it
+        if self._is_edited:
+            self._is_edited = False
+            self._view.editing_finished.emit()
 
 
 class FloatInputViewLike(ViewLike, Protocol):
@@ -3103,6 +3150,7 @@ RENDERERS: dict[str, Callable[[Any], Renderer[Any, Any]]] = {
     "splitter": TextualSplitterRenderer,
     "status_bar": TextualStatusBarRenderer,
     "table": TextualTableRenderer,
+    "text_area": TextualTextAreaRenderer,
     "tab_page": TextualTabPageRenderer,
     "tabs": TextualTabsRenderer,
     "toolbar": TextualToolBarRenderer,

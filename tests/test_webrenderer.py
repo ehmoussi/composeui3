@@ -2409,6 +2409,40 @@ def test_checking_the_box_on_the_server_swaps_it_checked(pipe_main_view: PipeMai
     assert _selected(_swapped(render_dirty(dirty), field.widget_id)) == ["on"]
 
 
+def test_a_text_area_takes_the_lines_posted_and_finishes_editing_once(
+    pipe_main_view: PipeMainView, pipe_client: TestClient
+) -> None:
+    comment = pipe_main_view.pages.inputs.pipe_form.comment
+    field_id = _field_id(comment)
+    edited: list[str] = []
+    finished: list[None] = []
+    comment.text_edited.connect(edited.append)
+    comment.editing_finished.connect(lambda: finished.append(None))
+
+    # a form's encoding ends the lines with CRLF; `change` posts the text again
+    for event in ("input", "change"):
+        pipe_client.post(f"/widget/{field_id}", data={"value": "North\r\nside", "event": event})
+
+    assert comment.text == "North\nside"
+    assert edited == ["North\nside"]
+    assert finished == [None]
+
+
+def test_a_text_area_set_on_the_server_keeps_its_first_new_line(
+    pipe_main_view: PipeMainView,
+) -> None:
+    comment = pipe_main_view.pages.inputs.pipe_form.comment
+    field = _part(comment, "field")
+
+    with collect_dirty() as dirty:
+        comment.text = "\nindented <b>"
+
+    area = _swapped(render_dirty(dirty), field.widget_id)
+    assert area.tag == "textarea"
+    # a browser drops a new line just after `<textarea>`: it must not be the text's
+    assert area.text == "\n\nindented <b>"
+
+
 def test_finishing_a_dimension_edit_swaps_the_summary_table(
     pipe_main_view: PipeMainView, pipe_client: TestClient
 ) -> None:

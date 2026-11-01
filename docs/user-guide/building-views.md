@@ -143,6 +143,7 @@ The fields:
 | Field | Its value | What the user does |
 | --- | --- | --- |
 | `InputView` | `text` | Types a line of text |
+| `TextAreaView` | `text`, with its lines (see [Text area](widgets.md#text-area)) | Types several lines of text |
 | `FloatInputView` | `value`, a `float` or `None`, from `minimum` to `maximum`, with `decimals` | Types a decimal number |
 | `IntInputView` | `value`, an `int` or `None` (see [Integer input](widgets.md#integer-input)) | Types a whole number |
 | `DateInputView` | `value`, a `datetime.date` or `None` (see [Date input](widgets.md#date-input)) | Types or picks a date |
@@ -167,7 +168,8 @@ shows in its place between the rows, as wide as the form. The checks of the form
 rows only.
 
 - **The text fields** emit `text_edited` on each change that the user makes, and
-  `editing_finished` when the user is done with the field, for example on Enter.
+  `editing_finished` when the user is done with the field, for example on Enter, or as a
+  text area loses the focus.
 - **A check box** shows other views only while it is checked, with `shows`:
   `self.show_raw_data.shows(self.table)`. It sets their `is_visible` at once, and again
   each time the box changes: as the user clicks it, as code sets `is_checked`, and as a

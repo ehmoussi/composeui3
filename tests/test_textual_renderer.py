@@ -40,6 +40,7 @@ from textual.widgets import (
     Select,
     Static,
     TabPane,
+    TextArea,
 )
 from textual.widgets._select import SelectCurrent
 from textual.widgets.collapsible import CollapsibleTitle
@@ -218,6 +219,47 @@ async def test_textual_app_renders_and_round_trips_input_and_radio_selection() -
         await pilot.pause()
         assert view.form.shape.value == "ROUND"
         assert view.status_bar.message == "Shape changed: ROUND"
+
+
+@pytest.mark.asyncio
+async def test_a_text_area_takes_several_lines_and_finishes_editing_when_left_after_a_change() -> (
+    None
+):
+    view = PipeMainView()
+    view.render(RendererType.TEXTUAL)
+    assert isinstance(view.renderer, TextualMainRenderer)
+    app = view.renderer.app
+    assert app is not None
+    comment = view.pages.inputs.pipe_form.comment
+    edited: list[str] = []
+    finished: list[None] = []
+    comment.text_edited.connect(edited.append)
+    comment.editing_finished.connect(lambda: finished.append(None))
+
+    async with app.run_test() as pilot:
+        area = _field_widget(comment.renderer)
+        assert isinstance(area, TextArea)
+        area.focus()
+        await pilot.press(*"North", "enter", *"side")
+        await pilot.pause()
+
+        assert comment.text == "North\nside"
+        assert finished == []  # Enter starts a new line
+        await pilot.press("tab")
+        await pilot.pause()
+        assert not area.has_focus  # Tab goes to the next field, not into the text
+        assert finished == [None]
+
+        comment.text = "Set by the app"
+        await pilot.pause()
+        area.focus()
+        await pilot.pause()
+        await pilot.press("tab")
+        await pilot.pause()
+
+        assert area.text == "Set by the app"
+        assert edited[-1] == "North\nside"  # the app's text is no edit
+        assert finished == [None]  # left without a change
 
 
 @pytest.mark.asyncio

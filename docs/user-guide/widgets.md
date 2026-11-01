@@ -43,6 +43,19 @@ red text. Textual and the web color the button by its variant.
 The `help` of a labelled row says what to enter. A "?" button beside the label shows it.
 A click, a tap, or the keyboard opens it. Textual shows the help as a hint under the label.
 
+## Text area
+
+A `TextAreaView` takes several lines of text, for example a comment. Its `text` holds the
+lines, separated by `"\n"`. In a form, use `LabelRowTextAreaView`.
+
+- Enter starts a new line. The field emits `editing_finished` when it loses the focus after
+  a change.
+- Tab goes to the next field, and does not go into the text.
+- Qt shows a `QPlainTextEdit`, Textual a `TextArea`, and the web a `<textarea>`. Each one
+  is four lines high.
+
+The comment of [`src/examples/pipeform.py`](../../src/examples/pipeform.py) is a text area.
+
 ## Integer input
 
 An `IntInputView` takes a whole number between its `minimum` and `maximum`, for example

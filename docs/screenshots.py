@@ -107,6 +107,7 @@ def _pipeform(main_view: Any, _model: Optional[Model]) -> None:
     form.incident_pipe.half_length.value = 120.0
     form.edge_type.value = pipeform.EdgeType.Fillet
     form.edge_type.value_changed.emit(pipeform.EdgeType.Fillet)
+    form.comment.text = "Cooling loop, north side.\nChecked on site in March."
     form.check()
 
 
@@ -257,7 +258,7 @@ def _examples() -> list[Example]:
             backends=("web",),
             window=(900, 360),
         ),
-        Example("pipeform", pipeform.PipeMainView, _pipeform),
+        Example("pipeform", pipeform.PipeMainView, _pipeform, window=(1200, 1200)),
         Example(
             "pipecatalogue",
             pipecatalogue.PipeCatalogueMainView,

@@ -6,6 +6,11 @@ The notable changes of each release of ComposeUI. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `TextAreaView`, a field for several lines of text, and its form rows `RowTextAreaView`
+  and `LabelRowTextAreaView`. The pipe form example has a comment in one.
+
 ## [0.2.0] - 2026-10-30
 
 ### Added

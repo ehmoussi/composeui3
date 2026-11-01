@@ -19,6 +19,7 @@ from composeui.core.view import (
     LabelRowFloatInputView,
     LabelRowInputView,
     LabelRowRadioGroupView,
+    LabelRowTextAreaView,
     LanguageMenu,
     MainView,
     MarkdownView,
@@ -134,6 +135,14 @@ class PipeNameRowView(LabelRowInputView):
 
 
 @define_view
+class CommentRowView(LabelRowTextAreaView):
+    def __attrs_post_init__(self) -> None:
+        super().__attrs_post_init__()
+        self.label = self.tr("Comment")
+        self.placeholder = self.tr("Notes on the junction, on several lines")
+
+
+@define_view
 class PipeFormView(FormView):
     name: PipeNameRowView = Factory(PipeNameRowView)
     material: MaterialView = Factory(MaterialView)
@@ -147,6 +156,8 @@ class PipeFormView(FormView):
 
     chamfer: ChamferDimensionView = Factory(ChamferDimensionView)
     fillet: FilletDimensionView = Factory(FilletDimensionView)
+
+    comment: CommentRowView = Factory(CommentRowView)
 
     def __attrs_post_init__(self) -> None:
         super().__attrs_post_init__()
