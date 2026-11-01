@@ -944,9 +944,8 @@ async def test_open_file_action_runs_the_picker_on_a_worker_thread_and_loads_sta
         file_input.value = str(filepath)
         await pilot.pause()
         await pilot.press("enter")
-        await pilot.pause()
-        await pilot.pause()
-        await pilot.pause()
+        await app.workers.wait_for_complete()  # the action's worker thread, done
+        await pilot.pause()  # what it handed back to the app's thread
 
         assert len(app.screen_stack) == 1  # modal closed
         assert view.file_view.filepath == filepath
@@ -979,8 +978,8 @@ async def test_pick_file_action_hands_the_picked_file_over(tmp_path: Path) -> No
         file_input.value = str(path)
         await pilot.pause()
         await pilot.press("enter")
-        for _ in range(4):
-            await pilot.pause()
+        await app.workers.wait_for_complete()  # the action's worker thread, done
+        await pilot.pause()  # what it handed back to the app's thread
         assert len(app.screen_stack) == 1
         assert view.help.text == "# Notes"
 
@@ -1023,8 +1022,8 @@ async def test_open_file_action_can_be_cancelled_without_hanging() -> None:
         assert len(app.screen_stack) == 2
 
         await pilot.press("escape")
-        await pilot.pause()
-        await pilot.pause()
+        await app.workers.wait_for_complete()  # the action's worker thread, done
+        await pilot.pause()  # what it handed back to the app's thread
 
         assert len(app.screen_stack) == 1
         assert view.file_view.filepath is None
@@ -3691,8 +3690,8 @@ async def test_save_file_action_saves_under_the_extension_the_name_lacks(tmp_pat
         file_input.value = str(typed)
         await pilot.pause()
         await pilot.press("enter")
-        for _ in range(3):
-            await pilot.pause()
+        await app.workers.wait_for_complete()  # the action's worker thread, done
+        await pilot.pause()  # what it handed back to the app's thread
 
         assert len(app.screen_stack) == 1  # modal closed
         assert view.file_view.filepath == typed.with_suffix(".pipe")
