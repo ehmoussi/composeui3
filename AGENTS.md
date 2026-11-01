@@ -140,6 +140,11 @@ docs/            # user guide, examples guide, technical guide; Sphinx site (con
 - Tests for optional backends guard with `pytest.importorskip(...)`.
 - `make test` runs the tests in parallel, a worker per CPU (pytest-xdist): a test must not
   depend on another's state or order. Without `-n`, `pytest` runs them one after another.
+- A test that reads what a worker thread or a job does waits for that work, not for a fixed
+  number of pauses: `await app.workers.wait_for_complete()` after a Textual file action,
+  `main_view.jobs.wait()` for a job, `qtbot.waitUntil(...)` on Qt. A slow CI runner (Windows,
+  Python 3.9) fails a fixed wait. See the `test-audit` skill ("Waiting for work on another
+  thread").
 - What only a browser shows (the page's scripts, htmx swaps) goes in `tests/test_browser.py`,
   marked `browser`. It needs the `browser` group and a Chromium:
   `uv run --group browser playwright install chromium` once, then `make browser-test`.
