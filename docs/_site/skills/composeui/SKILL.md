@@ -23,6 +23,11 @@ gives the installed version. When it is newer than 0.2 (its first two numbers), 
 this file is not in the installed `composeui`, the copy is older than the code: read the
 current skill, and tell the user to download it again.
 
+To upgrade an app to a newer ComposeUI, read the changelog,
+https://github.com/ehmoussi/composeui/blob/main/CHANGELOG.md. Read the section of each
+release after the app's version, and change the app for each name that was renamed or removed.
+Before 1.0, a minor version can break the API.
+
 ## A minimal app
 
 ```python
@@ -158,3 +163,5 @@ the option for the web (extra `web`, the default).
 - Complete apps to copy from: the examples guide,
   https://ehmoussi.github.io/composeui/examples-guide.html
 - Exact signatures: the API reference, https://ehmoussi.github.io/composeui/api/index.html
+- What changed in each release: the changelog,
+  https://github.com/ehmoussi/composeui/blob/main/CHANGELOG.md
