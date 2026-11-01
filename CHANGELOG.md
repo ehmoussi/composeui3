@@ -33,6 +33,9 @@ The notable changes of each release of ComposeUI. The format follows
   the dialog and keeps it open. The base of the two dialogs is `OkCancelDialogView`. The
   pipe catalogue's Edit dialog has Apply, checks that no other pipe has the name, and shows
   why the database refuses a pipe.
+- `OkCancelDialogView.show_message`, a message of information above a dialog's buttons, such
+  as "Saved" after Apply: it doesn't stop OK, and goes on the next click, check or opening.
+  The pipe catalogue's Apply says so in its dialog.
 
 ## [0.2.0] - 2026-10-30
 

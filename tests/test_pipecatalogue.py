@@ -12,7 +12,7 @@ import pytest
 
 from composeui.core.application import ModelApplication
 from composeui.core.study import VIEWS_NAME
-from composeui.core.view import NodeMark
+from composeui.core.view import LogType, NodeMark
 from examples.pipecatalogue import (
     Material,
     PipeCatalogueMainView,
@@ -238,9 +238,12 @@ def test_an_edit_the_database_refuses_keeps_the_dialog_open_and_says_why_there(
     press()
     assert dialog.is_visible is (answer == "apply")
     assert _thickness(app, "Main line") == 6.0
-    # said once the dialog closes, not behind it while open
+    # Apply says it in the dialog, left open; Save in the status bar, once the dialog closes
     said = "Added 'Main line'" if answer == "apply" else "Saved 'Main line'"
     assert app.main_view.status_bar.message == said
+    if answer == "apply":
+        assert dialog.log_view.log_message == "Saved 'Main line'"
+        assert dialog.log_view.log_type is LogType.INFO
 
 
 def _thickness(app: App, name: str) -> float:
