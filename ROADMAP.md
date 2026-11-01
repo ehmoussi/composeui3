@@ -49,21 +49,23 @@ M0 sets measurable targets for the goal, and each milestone reports against them
 
 ## Where ComposeUI stands
 
-Release 0.1.0 (27 October 2026) is on PyPI. The README still calls the API pre-alpha: a
+Release 0.2.0 (30 October 2026) is on PyPI. The README still calls the API pre-alpha: a
 stable API is the goal of M5. The [widget catalog](docs/widgets.md) lists every widget and its
 backends, and the [user guide](docs/user-guide.md) shows how to use them.
 
 | Area | Already there |
 | --- | --- |
 | Core | Typed `attrs` views, reactive attributes, signals, callback injection, lazy backend selection, and the backend's capabilities |
-| Backends | Qt, Textual, and the web (Starlette and htmx); maps on Qt and the web only |
+| Backends | Qt, Textual, and the web (Starlette and htmx); maps on Qt and the web only. The web sends only the shown page of a router and the shown tab of a tab view |
 | Forms and layout | Inputs, validation, buttons, progress, metrics, expanders, trees, Markdown, consoles, pages, tabs, splitters, sidebars, view lists, menus, toolbars, and typed form and content dialogs, with buttons and checks of their own |
+| Files and paths | File, folder and save path fields and table cells, files picked on the server (`server_roots`), paths relative to the study (`base_folder`), a path cell by the row's kind (`path_by`), and `MainView.write_file`, which asks before it replaces a file |
 | Tables | Editable tables, typed record tables, sorting, filtering, cell widgets and styles, header groups, and row headers |
+| Dashboards | `DashboardView`, `bar_chart`, `Task.show_state`, and `CheckBoxMixin.shows` (the first part of N01) |
 | Large tables | `SourceTableView` on `ListSource`, `SqliteSource` and `DataFrameSource`: rows read as they show, selection by row ID, and CSV export |
 | Dataframes | The `dataframe` extra: pandas, Polars, PyArrow and lazy frames through Narwhals, with `series_of` and `points_of` |
 | CSV import | `CSVSqliteTable`: typed columns, column mapping, dialect detection, batches in a transaction, gzip, and URLs |
 | Charts and maps | Line, step, scatter and bar charts, log axes, reference lines, report images, and `MapView` point overlays |
-| Models and studies | `SqliteModel`: transactions, typed rows, change signals, study files with migrations, and `MainView.state_version` / `migrate_state` |
+| Models and studies | `SqliteModel`: transactions, typed rows, change signals, study files with migrations, `MainView.state_version` / `migrate_state`, and `MainView.loaded` to give again what a study doesn't hold |
 | Background work | Jobs with typed progress and cancellation, and reusable `Task` objects with their result, error, and the controls that follow them |
 | Deployment | One Uvicorn process behind nginx: TLS, proxy headers, request limits, and optional HTTP Basic Auth |
 | Tooling | Tests on each backend and in a browser, an app-testing guide, several type checkers, CI on Python 3.9 to 3.14 and three OSes, and a coding-agent skill |
@@ -115,8 +117,9 @@ Change that contract, and its tests, explicitly for extensions.
 
 M1 and M2 come first: they give the shortest path from analysis to a shared app. M3 and M4 can
 then progress in parallel. Each milestone ships as a 0.x release that users can try, and its
-changelog says what they can now build. A conditional item blocks no milestone until its
-condition is met.
+changelog says what they can now build. Between two milestones, a 0.x release ships the
+finished entries of the backlog and the fixes, and its changelog does not claim a milestone. A
+conditional item blocks no milestone until its condition is met.
 
 ## Next step
 
@@ -558,7 +561,7 @@ For A02, test the Qt package on a clean machine. An app with a map needs `map.qm
 Location and Qt Positioning QML modules, and the location plugins. Document each recipe in
 "Running the app" once it works. The web recipe exists; its remaining work is N09.
 
-For L02, `page.js` has 1,175 lines today. The check brings Node into CI, and it cannot check
+For L02, `page.js` has 1,345 lines today. The check brings Node into CI, and it cannot check
 the `data-*` attributes and custom events that `page.js` shares with `webrenderer.py`; the
 browser tests cover those. Start with uPlot's chart options.
 
