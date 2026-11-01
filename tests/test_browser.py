@@ -2286,14 +2286,14 @@ def test_the_chart_script_loads_only_once_a_chart_shows(page: Page, chart_pages_
     expect(page.locator("#app")).to_be_visible()
     assert page.evaluate("typeof uPlot") == "undefined"
 
+    # the chart on a page not shown: not in the page, so nor is the chart script
     chart_pages_page.goto("/notes")
-    chart_pages_page.wait_for_function("typeof uPlot !== 'undefined'")
-    # its page hidden: no width to draw at yet
-    figure = chart_pages_page.locator("figure").filter(has_text="Pressure")
-    expect(figure.locator("canvas")).to_have_count(0)
+    expect(chart_pages_page.get_by_role("link", name="Chart")).to_be_visible()
+    assert chart_pages_page.evaluate("typeof uPlot") == "undefined"
 
     chart_pages_page.get_by_role("link", name="Chart").click()
 
+    figure = chart_pages_page.locator("figure").filter(has_text="Pressure")
     expect(figure.locator("canvas")).to_have_count(1)
     expect(figure.locator(".u-legend")).to_contain_text("Inlet")
 

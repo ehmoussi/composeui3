@@ -2549,15 +2549,15 @@ def test_a_text_area_set_on_the_server_keeps_its_first_new_line(
     assert area.text == "\n\nindented <b>"
 
 
-def test_finishing_a_dimension_edit_swaps_the_summary_table(
+def test_finishing_a_dimension_edit_updates_the_summary_table(
     pipe_main_view: PipeMainView, pipe_client: TestClient
 ) -> None:
     radius_id = _field_id(pipe_main_view.pages.inputs.pipe_form.main_pipe.radius)
     summary_id = _widget_id(pipe_main_view.pages.results.summary.renderer)
 
-    body = pipe_client.post(f"/widget/{radius_id}", data={"value": "35", "event": "change"}).text
+    pipe_client.post(f"/widget/{radius_id}", data={"value": "35", "event": "change"})
 
-    summary = _swapped(body, summary_id)
+    summary = _element(pipe_client.get("/results").text, summary_id)
     assert [tag for tag, _ in summary.descendants].count("th") == 4
     assert "Main Pipe352020" in summary.text  # the main pipe's row, cell after cell
 
@@ -4119,7 +4119,7 @@ def toolbar_client(toolbar_views: list[ToolBarMainView]) -> Iterator[TestClient]
 def test_a_toolbar_shows_its_actions_as_header_buttons(
     toolbar_views: list[ToolBarMainView], toolbar_client: TestClient
 ) -> None:
-    page = toolbar_client.get("/").text
+    page = toolbar_client.get("/results").text  # the page Run changes
     (main_view,) = toolbar_views
     toolbar_view = main_view.toolbar
     toolbar_id = _widget_id(toolbar_view.renderer)
@@ -4765,25 +4765,32 @@ def test_what_a_thread_changes_comes_with_the_session_s_next_response(
     assert _find(pages_client.get(f"/widget/{bar_id}").text, total_id) is None  # shown already
 
 
-def test_clicking_the_button_swaps_in_what_its_view_changed(
+def test_clicking_the_button_changes_a_page_not_shown_once_it_shows(
     pages_views: list[PagesMainView], pages_client: TestClient
 ) -> None:
     page = pages_client.get("/inputs").text
     (main_view,) = pages_views
     inputs = main_view.router.inputs
     button_id = _widget_id(inputs.submit.renderer)
+    total_id = _widget_id(main_view.router.results.total.renderer)
     button = _element(page, button_id)
     assert (button.tag, button.attributes["type"], button.text) == ("button", "button", "Submit")
     assert "btn-primary" in (button.attributes["class"] or "").split()
+    assert _find(page, total_id) is None  # on the results page, not sent
     inputs.name.text = "<Ada>"
 
     response = pages_client.post(f"/widget/{button_id}", data={"event": "click"})
 
     assert response.status_code == 200
-    total = _swapped(response.text, _widget_id(main_view.router.results.total.renderer))
+    assert response.text == ""  # the clicked button isn't swapped back, nor the label not shown
+    results_link = _widget_id(main_view.router.results.action.renderer)
+    shown = pages_client.post(f"/widget/{results_link}", data={"event": "triggered"}).text
+    _swapped(shown, _widget_id(main_view.router.renderer))
+    assert _find(shown, button_id) is None  # the page left goes
+    total = _element(shown, total_id)
     assert total.text == "Submitted: <Ada>"  # escaped in the markup, the text once parsed
-    assert _find(response.text, button_id) is None  # the clicked button isn't swapped back
 
+    pages_client.get("/inputs")
     with collect_dirty() as dirty:
         inputs.submit.variant = ButtonVariant.DANGER
         swapped = _swapped(render_dirty(dirty), button_id)

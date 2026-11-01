@@ -677,8 +677,10 @@ The user guide's "Web backend" section covers what users see.
 - **Open** applies an upload to a scratch instance first (core's `load_state_data`), so a
   bad file never half-loads. Responses send `Cache-Control: no-store` and controls set
   `autocomplete="off"`, so a reload always shows the server's state.
-- **Dialogs** render at the end of the page, outside the pages' slots (a hidden slot
-  would hide them). The browser opens a modal `<dialog>` only from a script: `page.js`
+- **Pages.** The router sends only the shown page. A change on another page isn't sent:
+  the page brings it once shown, as navigating swaps the router.
+- **Dialogs** render at the end of the page, outside the shown page's slot (a page not shown
+  isn't sent, and would take them with it). The browser opens a modal `<dialog>` only from a script: `page.js`
   opens each one swapped in shown, once. A button closes its dialog in the browser
   first, so focus returns where it was, then posts its answer; the server swaps it closed.
 - **Header.** A web app's header, not a desktop menu bar: File's New, Open and Save are
