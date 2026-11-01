@@ -28,6 +28,18 @@ https://github.com/ehmoussi/composeui/blob/main/CHANGELOG.md. Read the section o
 release after the app's version, and change the app for each name that was renamed or removed.
 Before 1.0, a minor version can break the API.
 
+When the app needs a name that no release has yet, depend on a commit of `main`:
+`"composeui[web] @ git+https://github.com/ehmoussi/composeui@<commit>"` in
+`[project] dependencies`, which both pip and uv install. `uv add` with a git URL writes
+`[tool.uv.sources]` instead, which pip ignores. Check that the name is in that commit, and
+install the app with pip and with uv, not only in the current environment.
+
+An installed commit has a version with `.dev`, such as `0.2.1.dev4+g1a2b3c4`. Its first two
+numbers can be those of this copy, but the commit can have names that this copy does not
+know. Then read the skill of that commit, at
+https://raw.githubusercontent.com/ehmoussi/composeui/<commit>/docs/_site/skills/composeui/SKILL.md,
+and download it again each time that the app moves to a new commit.
+
 ## A minimal app
 
 ```python
@@ -62,6 +74,31 @@ if __name__ == "__main__":
 
 Run it with `--backend qt` (extra `pyside6`), `--backend textual` (extra `tui`), or without
 the option for the web (extra `web`, the default).
+
+## Structure the app
+
+- **Split the app into components,** views that each do one part of the work. A component
+  connects the signals of its views and sets their validators in its
+  `__attrs_post_init__`.
+- **A component tells the app with a `Signal` field of its own**
+  (`searched: Signal[str] = Factory(Signal[str])`, from `composeui.core.signal`), and the
+  main view connects it to another component. The main view keeps the work of the whole
+  app (`loaded`, menus, toolbars, dialogs), not the callback of each button. When a
+  callback of the main view only calls a method of a component, move the connection into
+  the component.
+- **Never keep a parent or another component in a view field.** The app reads each view
+  field as a child view, so a view that holds its parent makes the app loop forever as it
+  starts. A callback asks for `main_view` instead.
+- **Keep no state in a module or class variable.** On the web, each session builds its own
+  main view, but all the users share a module or class variable.
+- **Define each view at module level,** not in a function: `attrs` and `cattrs` read the
+  types of its fields from the module. Keep the model and the jobs' functions in modules
+  that import no view. Call `run` in the program's module, under
+  `if __name__ == "__main__":`.
+- **Split by the work, not by the number of lines.** Before you simplify an app, read which
+  view connects each callback, and which code works around an older ComposeUI.
+
+See https://ehmoussi.github.io/composeui/user-guide/building-views.html#structure-an-app
 
 ## Rules
 
@@ -169,11 +206,12 @@ the option for the web (extra `web`, the default).
 - **Support Python 3.9 in view fields.** Write `Optional[int]` and `Union[int, str]`, not
   `int | None`, because `attrs` and `cattrs` evaluate the annotations at runtime. Start
   every module with `from __future__ import annotations`, and do not quote annotations.
-  Define the views at module level.
 - **Test the views without a backend.** Build the app with `Application(build_main_view=...)`
   (or `ModelApplication`) from `composeui.core.application`, not the main view alone, so
   that callbacks get `main_view` and `model`. Set a field, emit its signal, and check the
-  fields; call `main_view.jobs.wait()` for the jobs' results.
+  fields; call `main_view.jobs.wait()` for the jobs' results. Test a component in a main
+  view that holds only it, then the whole app. Build two apps and check that they share no
+  state.
   See https://ehmoussi.github.io/composeui/user-guide/testing.html
 - **Run a code example before you answer with it.** The API moves: check each name against
   `composeui.core.view` or the widget catalog before you use it.

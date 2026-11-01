@@ -56,6 +56,53 @@ def test_the_status_bar_greets_the_name_typed() -> None:
 - **Keep the messages.** The status bar clears a message after its `timeout`, in a timer of
   its own. With a `timeout` of 0, the message stays, so a slow test still sees it.
 
+## Test a component
+
+Test a [component](building-views.md#structure-an-app) in a main view that holds only it.
+Then test the app that connects the components:
+
+```python
+from attrs import Factory
+
+from composeui.core.application import Application
+from composeui.core.view import MainView, define_view
+
+
+@define_view
+class SearchBarHost(MainView):
+    search_bar: SearchBar = Factory(SearchBar)  # the component of "Structure an app"
+
+
+def test_the_search_bar_says_what_to_search() -> None:
+    app = Application(build_main_view=SearchBarHost)
+    search_bar = app.main_view.search_bar
+    searches = []
+    search_bar.searched.connect(lambda query: searches.append(query))
+
+    search_bar.query.text = "steel"
+    search_bar.query.text_edited.emit("steel")
+    search_bar.search.clicked.emit()
+
+    assert search_bar.search.is_enabled
+    assert searches == ["steel"]
+
+
+def test_two_apps_share_no_state() -> None:
+    first = Application(build_main_view=SearchMainView)  # the app of "Structure an app"
+    second = Application(build_main_view=SearchMainView)
+
+    first.main_view.search_bar.query.text = "steel"
+    first.main_view.search_bar.search.clicked.emit()
+
+    assert first.main_view.last_search.text == "Last search: steel"
+    assert second.main_view.last_search.text == "No search yet"
+```
+
+- **The host is a main view,** so that the app injects `main_view` into the component's
+  callbacks, as it does in the whole app.
+- **Two apps share no state.** On the web, each session builds its own main view. A test
+  with two apps finds state that a module or class variable shares between them.
+
 ## Test a form
 
 A form runs its checks without an app. `check()` runs them all, as a Save button does
