@@ -61,7 +61,13 @@ _STYLE_ROLES = (
     Qt.ItemDataRole.ToolTipRole,
 )
 #: the cells `QCellDelegate` draws a widget in, rather than Qt
-_DRAWN_KINDS = (CellKind.BUTTON, CellKind.COMBOBOX, CellKind.FILE_PATH)
+_DRAWN_KINDS = (
+    CellKind.BUTTON,
+    CellKind.COMBOBOX,
+    CellKind.FILE_PATH,
+    CellKind.FOLDER_PATH,
+    CellKind.SAVE_PATH,
+)
 
 
 class QTextTableModel(QAbstractTableModel):
@@ -73,8 +79,9 @@ class QTextTableModel(QAbstractTableModel):
 
     A check box column of `cell_widgets` holds checkable cells without text, toggled when
     editable; a link column's text looks like a link. Neither is typed in, nor is a
-    button column; a combobox column is, through `QCellDelegate`'s editor, and a file path
-    column is, as a plain one.
+    button column; a combobox column is, through `QCellDelegate`'s editor, and a path
+    column is, as a plain one. A `CellWidget.path_by` column's widget is that of each
+    row's kind: an edit changing the kind redraws the whole row.
 
     A cell of `styles` has its background, its text black or white on it, and its mark
     before its text, named by its tooltip; a disabled one is never edited. The rows have
@@ -97,8 +104,13 @@ class QTextTableModel(QAbstractTableModel):
         #: each mark's name, its tooltip
         self.mark_texts: dict[NodeMark, str] = {}
 
-    def kind(self, column: int) -> CellKind | None:
+    def widget(self, row: int, column: int) -> CellWidget | None:
+        """Get a cell's widget: for `CellWidget.path_by`, that of its row's kind."""
         widget = self.cell_widgets.get(column)
+        return None if widget is None else widget.for_row(self._rows[row])
+
+    def kind(self, row: int, column: int) -> CellKind | None:
+        widget = self.widget(row, column)
         return None if widget is None else widget.kind
 
     def set_header_icons(self, icons: dict[int, QIcon]) -> None:
@@ -137,7 +149,7 @@ class QTextTableModel(QAbstractTableModel):
     def data(self, index: _Index, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
         if not index.isValid():
             return None
-        kind = self.kind(index.column())
+        kind = self.kind(index.row(), index.column())
         if kind is CellKind.LINK and role in (
             Qt.ItemDataRole.FontRole,
             Qt.ItemDataRole.ForegroundRole,
@@ -185,10 +197,10 @@ class QTextTableModel(QAbstractTableModel):
             or not self.style(index.row(), index.column()).is_enabled
         ):
             return flags
-        kind = self.kind(index.column())
+        kind = self.kind(index.row(), index.column())
         if kind is CellKind.CHECK_BOX:
             flags |= Qt.ItemFlag.ItemIsUserCheckable
-        elif kind in (None, CellKind.COMBOBOX, CellKind.FILE_PATH):
+        elif kind is None or kind is CellKind.COMBOBOX or kind.is_path:
             flags |= Qt.ItemFlag.ItemIsEditable
         return flags
 
@@ -204,7 +216,8 @@ class QTextTableModel(QAbstractTableModel):
         if text == self.text(row, column):
             return False
         self._rows = replace_cell(self._rows, row, column, text)
-        self.dataChanged.emit(index, index)
+        # the whole row: a path cell's widget may follow the kind this cell gives
+        self.dataChanged.emit(self.index(row, 0), self.index(row, len(self._headers) - 1))
         self.cell_edited.emit(row, column, text)
         return True
 
@@ -229,8 +242,8 @@ class QCellDelegate(QStyledItemDelegate):
 
     A button cell shows its text, then the button, a square as tall as the cell unless
     its text is wider; `cell_clicked` emits a click on it, or anywhere on a link cell.
-    A file path cell shows its path, then a "…" button, enabled in an editable column,
-    whose click `browse_clicked` emits. A combobox cell is a combobox's frame around its
+    A path cell shows its path, then a "…" button, enabled in an editable column, whose
+    click `browse_clicked` emits. A combobox cell is a combobox's frame around its
     text: a click on it, or editing it, opens a combobox of its options, the cell taking
     the one picked. A disabled cell is drawn grayed, its button or link not clicked.
     """
@@ -246,12 +259,12 @@ class QCellDelegate(QStyledItemDelegate):
         self._closed: set[QWidget] = set()
 
     def _widget(self, index: _Index) -> CellWidget | None:
-        return self._model.cell_widgets.get(index.column())
+        return self._model.widget(index.row(), index.column())
 
     @staticmethod
     def button_text(widget: CellWidget) -> str:
-        """Get the text a button shows: a file path's is "…", its `text` naming it."""
-        return "\u2026" if widget.kind is CellKind.FILE_PATH else widget.text
+        """Get the text a button shows: a path's is "…", its `text` naming it."""
+        return "\u2026" if widget.kind.is_path else widget.text
 
     @staticmethod
     def button_rect(rect: QRect, option: QStyleOptionViewItem, text: str) -> QRect:
@@ -312,7 +325,7 @@ class QCellDelegate(QStyledItemDelegate):
         button.palette = option.palette
         button.fontMetrics = option.fontMetrics
         button.state = QStyle.StateFlag.State_Raised
-        if widget.kind is CellKind.FILE_PATH:
+        if widget.kind.is_path:
             # it edits the cell: enabled only where the cell is
             is_enabled = is_enabled and index.column() in self._model.editable_columns
         if is_enabled:
@@ -343,7 +356,7 @@ class QCellDelegate(QStyledItemDelegate):
             ):
                 self.cell_clicked.emit(index.row(), index.column())
             elif (
-                widget.kind is CellKind.FILE_PATH
+                widget.kind.is_path
                 and index.column() in self._model.editable_columns
                 and self.button_rect(option.rect, option, "\u2026").contains(position)
             ):
@@ -518,8 +531,8 @@ class QTextTableView(QTableView):
     The columns of `set_cell_widgets` show widgets (see `QCellDelegate`): a click or
     Space toggles an editable check box at once, `cell_edited` emitting it; a click on a
     button or a link, or Space on its cell, emits `cell_clicked`. A click on an editable
-    file path's button, or Space on its cell, emits `browse_clicked`, and `set_text`
-    gives the cell the file picked, as the user's edit. A check-all column's
+    path's button, or Space on its cell, emits `browse_clicked`, and `set_text` gives the
+    cell the path picked, as the user's edit. A check-all column's
     header starts with the box `set_checked_columns` shows, whose click emits
     `check_all_clicked`.
     """
@@ -585,14 +598,14 @@ class QTextTableView(QTableView):
             self.activated.emit(index)
             event.ignore()
             return
-        kind = self._model.kind(index.column()) if index.isValid() else None
+        kind = self._model.kind(index.row(), index.column()) if index.isValid() else None
         if event.key() == Qt.Key.Key_Space and (
             index.isValid() and self._model.style(index.row(), index.column()).is_enabled
         ):
             if kind in (CellKind.BUTTON, CellKind.LINK):
                 self.cell_clicked.emit(index.row(), index.column())
                 return
-            if kind is CellKind.FILE_PATH and index.column() in self._model.editable_columns:
+            if kind is not None and kind.is_path and index.column() in self._model.editable_columns:
                 self.browse_clicked.emit(index.row(), index.column())
                 return
         super().keyPressEvent(event)

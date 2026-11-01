@@ -47,6 +47,7 @@ from examples import (
     pipechart,
     pipeform,
     pipesweep,
+    studyinputs,
     taskview,
     textual_demo,
     uberpickups,
@@ -175,6 +176,13 @@ def _markdownviewer(main_view: Any, _model: Optional[Model]) -> None:
     main_view.open_markdown(readme)
 
 
+def _studyinputs(main_view: Any, _model: Optional[Model]) -> None:
+    # a study folder of no one's machine: the line under the table shows it
+    main_view.show_study(Path("/studies/beam"))
+    main_view.files.selected_rows = [0]
+    main_view.files.selection_changed.emit([0])
+
+
 def _webhello(main_view: Any, _model: Optional[Model]) -> None:
     main_view.form.name.text = "Ada"
     main_view.form.name.text_edited.emit("Ada")
@@ -300,6 +308,7 @@ def _examples() -> list[Example]:
             largetable.LargeTableMainView.connect_model,
         ),
         Example("markdownviewer", markdownviewer.MarkdownViewerMainView, _markdownviewer),
+        Example("studyinputs", studyinputs.StudyInputsMainView, _studyinputs),
         Example(
             "webhello",
             webhello.HelloMainView,

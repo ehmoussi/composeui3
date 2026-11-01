@@ -3101,6 +3101,17 @@ class CellKind(enum.Enum):
     LINK = enum.auto()
     #: a file's path, then a "…" button picking one (see `CellWidget.file_path`)
     FILE_PATH = enum.auto()
+    #: a folder's path, then a "…" button picking one (see `CellWidget.folder_path`)
+    FOLDER_PATH = enum.auto()
+    #: a path to save a file to, then a "…" button picking one (see `CellWidget.save_path`)
+    SAVE_PATH = enum.auto()
+    #: a path picked as the row's kind says, by another cell (see `CellWidget.path_by`)
+    PATH_BY_KIND = enum.auto()
+
+    @property
+    def is_path(self) -> bool:
+        """Tell whether its "…" button picks a path: a file's, a folder's, or one to save to."""
+        return self in (CellKind.FILE_PATH, CellKind.FOLDER_PATH, CellKind.SAVE_PATH)
 
 
 #: a check box cell's text, by whether it's checked, as `str` writes a boolean
@@ -3129,7 +3140,14 @@ class CellWidget:
     session keeps while a cell holds its path. `cell_edited` then emits the file's path.
     Its button is enabled only in an editable column. With `server_roots`, the web lists
     the server's files in them instead, and refuses a path typed outside them: the cell
-    keeps its text, and the status bar says why.
+    keeps its text, and the status bar says why. A folder path cell and a save path cell
+    pick as `FolderPathInputView` and `SavePathInputView` do: on the web, without
+    `server_roots`, their path is typed, and they have no button. With `base_folder`, a
+    relative path names a path in that folder, and a path picked in it shows relative to
+    it, as in a path field.
+
+    `path_by` picks the widget of each cell by the row's kind: the text of another cell of
+    the row. When the user changes that cell, the path cell's widget follows.
     """
 
     kind: CellKind
@@ -3148,11 +3166,51 @@ class CellWidget:
     #: than uploading a copy; on Qt and Textual, the dialog opens in the first one while
     #: the cell is empty, and the user can leave it (see `FilePathInputMixin.server_roots`)
     server_roots: tuple[Path, ...] = attrs.field(default=(), converter=_to_paths)
+    #: the folder of a path cell's relative path (see `PathInputMixin.base_folder`)
+    base_folder: Optional[Path] = None
+    #: whether a save path's user agrees to replace a file that exists, before it's picked
+    confirms_overwrite: bool = True
+    #: for `path_by`: the column of the row's kind, and the path widget of each kind
+    kind_column: int = 0
+    editors: dict[str, CellWidget] = attrs.field(factory=dict[str, "CellWidget"], hash=False)
 
     def translated(self, translate: Translate) -> CellWidget:
         """Get it with a button's text translated again, if it's `TranslatedText`."""
         text = translate_again(self.text, translate)
-        return self if text is self.text else attrs.evolve(self, text=text)
+        editors = {kind: editor.translated(translate) for kind, editor in self.editors.items()}
+        if text is self.text and all(editors[kind] is self.editors[kind] for kind in editors):
+            return self
+        return attrs.evolve(self, text=text, editors=editors)
+
+    def for_row(self, cells: Sequence[str]) -> Optional[CellWidget]:
+        """Get the widget of a cell of the row `cells`: for `path_by`, its kind's, if any.
+
+        A kind's widget without a `base_folder` takes this one's.
+        """
+        if self.kind is not CellKind.PATH_BY_KIND:
+            return self
+        kind = cells[self.kind_column] if self.kind_column < len(cells) else ""
+        editor = self.editors.get(kind)
+        if editor is None or editor.base_folder is not None or self.base_folder is None:
+            return editor
+        return attrs.evolve(editor, base_folder=self.base_folder)
+
+    def path(self, text: str) -> Path:
+        """Get the path a path cell's `text` names: from `base_folder` if relative."""
+        return path_of_text(text.strip(), self.base_folder)
+
+    def path_text(self, path: Path) -> str:
+        """Get the text a path cell shows for `path`: relative to `base_folder` when inside it."""
+        return text_of_path(path, self.base_folder)
+
+    def start_folder(self) -> Optional[Path]:
+        """Get the folder a path cell's dialog opens in while it's empty, if any.
+
+        `base_folder`, else the first of `server_roots`.
+        """
+        if self.base_folder is not None:
+            return self.base_folder.expanduser()
+        return self.server_roots[0] if self.server_roots else None
 
     @classmethod
     def check_box(cls, *, check_all: bool = False) -> CellWidget:
@@ -3176,12 +3234,72 @@ class CellWidget:
         extensions: Optional[dict[str, tuple[str, ...]]] = None,
         text: str = T("Choose a file"),
         server_roots: Iterable[Path] = (),
+        base_folder: Optional[Path] = None,
     ) -> CellWidget:
         return cls(
             CellKind.FILE_PATH,
             text=text,
             extensions=dict(extensions or {}),
             server_roots=_to_paths(server_roots),
+            base_folder=base_folder,
+        )
+
+    @classmethod
+    def folder_path(
+        cls,
+        text: str = T("Choose a folder"),
+        server_roots: Iterable[Path] = (),
+        base_folder: Optional[Path] = None,
+    ) -> CellWidget:
+        return cls(
+            CellKind.FOLDER_PATH,
+            text=text,
+            server_roots=_to_paths(server_roots),
+            base_folder=base_folder,
+        )
+
+    @classmethod
+    def save_path(
+        cls,
+        extensions: Optional[dict[str, tuple[str, ...]]] = None,
+        text: str = T("Save as"),
+        server_roots: Iterable[Path] = (),
+        base_folder: Optional[Path] = None,
+        *,
+        confirms_overwrite: bool = True,
+    ) -> CellWidget:
+        """Get a save path cell: picking a file that exists asks first, nothing is written."""
+        return cls(
+            CellKind.SAVE_PATH,
+            text=text,
+            extensions=dict(extensions or {}),
+            server_roots=_to_paths(server_roots),
+            base_folder=base_folder,
+            confirms_overwrite=confirms_overwrite,
+        )
+
+    @classmethod
+    def path_by(
+        cls,
+        kind_column: int,
+        editors: Mapping[str, CellWidget],
+        base_folder: Optional[Path] = None,
+    ) -> CellWidget:
+        """Get a path cell whose widget is that of the row's kind, the text of `kind_column`.
+
+        `editors` are file, folder or save path widgets, by kind. A row whose kind has none
+        shows a plain cell. `base_folder` is that of the widgets that have none.
+        """
+        for kind, editor in editors.items():
+            if not editor.kind.is_path:
+                msg = f"Cannot pick a path for the kind {kind!r} with a {editor.kind.name} cell."
+                raise ValueError(msg)
+        return cls(
+            CellKind.PATH_BY_KIND,
+            text="",
+            kind_column=kind_column,
+            editors=dict(editors),
+            base_folder=base_folder,
         )
 
 
@@ -3278,6 +3396,11 @@ FILE_TEXTS: Mapping[str, str] = {
     "unreadable_folder": T("This folder can't be read."),
     "partial_folder": T("This folder holds too many items to list them all: type the file's path."),
     "outside_roots": T("Can't take {path}: it isn't in the folders this column lists."),
+    "choose_folder": T("Choose this folder"),
+    "file_name": T("File name"),
+    "save": T("Save"),
+    "replace_question": T("{name} already exists. Replace it?"),
+    "replace": T("Replace"),
 }
 
 _ItemT = TypeVar("_ItemT")
@@ -3659,6 +3782,13 @@ class TableMixin:
     def cell_style(self, row: int, column: int) -> CellStyle:
         """Get how a cell looks, by its index in `rows`: plain unless `cell_styles` say."""
         return self.cell_styles.get((row, column), PLAIN_CELL)
+
+    def cell_widget(self, row: int, column: int) -> Optional[CellWidget]:
+        """Get the widget of a cell, by its index in `rows`: its row's kind's for `path_by`."""
+        widget = self.cell_widgets.get(column)
+        if widget is None:
+            return None
+        return widget.for_row(self.rows[row] if row < len(self.rows) else [])
 
     def is_cell_editable(self, row: int, column: int) -> bool:
         """Tell whether the user edits a cell: in `editable_columns`, and not disabled."""

@@ -13,6 +13,7 @@ run them from a clone of the repository.
 - [Where to start](#where-to-start)
 - [Pipe form](#pipe-form)
 - [Markdown viewer](#markdown-viewer)
+- [Study inputs](#study-inputs)
 - [Task view](#task-view)
 - [Pipe chart](#pipe-chart)
 - [Pipe catalogue](#pipe-catalogue)
@@ -44,6 +45,7 @@ options, such as `--language` and `-f FILE`.
 | --- | --- | --- |
 | [`pipeform.py`](../src/examples/pipeform.py) | web | Forms, validation, pages, a menu, a confirm dialog, Markdown help, a French translation |
 | [`markdownviewer.py`](../src/examples/markdownviewer.py) | web | A Markdown view, a file path input, an option of the app's own, no File menu |
+| [`studyinputs.py`](../src/examples/studyinputs.py) | web | A table of a study's files: paths picked by each row's kind, relative to the study's folder |
 | [`taskview.py`](../src/examples/taskview.py) | web | Jobs in threads, metrics, a progress bar, a step chart, an expander, a button and a link in a table's cells, a French translation |
 | [`pipechart.py`](../src/examples/pipechart.py) | qt | Line and scatter charts, a reference line, tabs, a table, check boxes and comboboxes in a table's cells, colored, marked and disabled cells, cells spanning rows, a header group, row headers |
 | [`pipecatalogue.py`](../src/examples/pipecatalogue.py) | web | A SQLite model, a sidebar, a list of views, a tree, resizable panes, a form dialog, a date input |
@@ -145,6 +147,40 @@ It shows:
   a file, or picks the file with the "…" button. On the web, the browser uploads it. The
   reload button reads the file again, for example after the user edits it.
 - an app without studies: `has_file_menu = False` leaves out the File menu.
+
+## Study inputs
+
+[`studyinputs.py`](../src/examples/studyinputs.py) lists the files and folders of a study,
+which the study reads or writes.
+
+```bash
+uv run python -m examples.studyinputs --study ~/studies/beam --backend qt
+```
+
+On Qt:
+
+![The study inputs on Qt](images/studyinputs-qt.png)
+
+On Textual:
+
+![The study inputs on Textual](images/studyinputs-textual.png)
+
+On the web:
+
+![The study inputs on the web](images/studyinputs-web.png)
+
+It shows:
+
+- a table with a [combobox](user-guide/tables.md#widgets-in-cells) of each row's kind: an input
+  file, an input folder, an output file, or an output folder;
+- [paths by the row's kind](user-guide/tables.md#paths-by-the-rows-kind): the "…" button of a
+  row's path picks a file, a folder, or a file to write, as its kind says. When the user
+  changes the kind, the button follows. An output file may not exist yet, and picking one
+  that exists asks first.
+- [relative paths](user-guide/widgets.md#relative-paths): the paths start from the study's
+  folder, `--study`, whatever folder the app started in. The line under the table shows
+  where the selected row's path leads (`cell_widget(row, column).path(text)`).
+- on the web, the "…" button lists the study's folder: its `server_roots`.
 
 ## Task view
 

@@ -1896,7 +1896,7 @@ class TextualTableRenderer(TextualWidgetRenderer[TableViewLike, ComposeFilterTab
                 "editable_columns": self._refresh_editable_columns,
                 "cell_widgets": self._refresh_cell_widgets,
                 # the web's list of the server's files only
-                "file_texts": lambda _view, _rendered_object, _value: None,
+                "file_texts": self._refresh_file_texts,
                 "cell_styles": self._refresh_looks,
                 "header_groups": self._refresh_header_groups,
                 "row_headers": self._refresh_looks,
@@ -2041,6 +2041,12 @@ class TextualTableRenderer(TextualWidgetRenderer[TableViewLike, ComposeFilterTab
     ) -> None:
         rendered_object.table.set_cell_widgets(value)
         cls._refresh_checked_columns(view, rendered_object, cell_widgets=value)
+
+    @staticmethod
+    def _refresh_file_texts(
+        _view: TableViewLike, rendered_object: ComposeFilterTable, value: dict[str, str]
+    ) -> None:
+        rendered_object.table.file_texts = value
 
     @classmethod
     def _refresh_looks(

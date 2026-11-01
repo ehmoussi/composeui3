@@ -591,6 +591,55 @@ def _file_filters(extensions: dict[str, tuple[str, ...]]) -> str:
     )
 
 
+def _ask_file(
+    parent: QWidget, title: str, start: Path | None, extensions: dict[str, tuple[str, ...]]
+) -> str:
+    """Get the file the user picks in Qt's file dialog, "" if cancelled."""
+    picked, _selected_filter = QFileDialog.getOpenFileName(
+        parent, title, "" if start is None else str(start), _file_filters(extensions)
+    )
+    return picked
+
+
+def _ask_folder(parent: QWidget, title: str, start: Path | None) -> str:
+    """Get the folder the user picks in Qt's folder dialog, "" if cancelled."""
+    return QFileDialog.getExistingDirectory(parent, title, "" if start is None else str(start))
+
+
+def _ask_save(  # noqa: PLR0913
+    parent: QWidget,
+    title: str,
+    start: Path | None,
+    extensions: dict[str, tuple[str, ...]],
+    *,
+    confirms_overwrite: bool,
+    replace_question: str,
+) -> str:
+    """Get the path the user picks in Qt's save dialog, the first extension added.
+
+    "" if cancelled, or if the user keeps a file that exists. Nothing is written.
+    """
+    options = QFileDialog.Option(0)
+    if not confirms_overwrite:
+        options = QFileDialog.Option.DontConfirmOverwrite
+    picked, _selected_filter = QFileDialog.getSaveFileName(
+        parent,
+        title,
+        "" if start is None else str(start),
+        _file_filters(extensions),
+        options=options,
+    )
+    if picked == "":
+        return ""
+    path = with_extension(Path(picked), extensions)
+    # Qt asked about the name as typed: the extension may name a file it didn't ask about
+    if path != Path(picked) and path.exists() and confirms_overwrite:
+        answer = QMessageBox.question(parent, title, replace_question.format(name=path.name))
+        if answer != QMessageBox.StandardButton.Yes:
+            return ""
+    return str(path)
+
+
 class PathInputViewLike(InputViewLike, Protocol):
     server_roots: tuple[Path, ...]
     base_folder: Path | None
@@ -720,13 +769,7 @@ class QtFilePathInputRenderer(_QtPathInputRenderer[FilePathInputViewLike]):
     def ask(self, parent: QWidget) -> str:
         path = self._view.path
         start = path.parent if path is not None else self._view.start_folder()
-        picked, _selected_filter = QFileDialog.getOpenFileName(
-            parent,
-            self._view.browse_text,
-            "" if start is None else str(start),
-            _file_filters(self._view.extensions),
-        )
-        return picked
+        return _ask_file(parent, self._view.browse_text, start, self._view.extensions)
 
     @staticmethod
     def _refresh_has_reload(
@@ -773,29 +816,14 @@ class QtSavePathInputRenderer(_QtPathInputRenderer[SavePathInputViewLike]):
     def ask(self, parent: QWidget) -> str:
         path = self._view.path
         start = path if path is not None else self._view.start_folder()
-        options = QFileDialog.Option(0)
-        if not self._view.confirms_overwrite:
-            options = QFileDialog.Option.DontConfirmOverwrite
-        picked, _selected_filter = QFileDialog.getSaveFileName(
+        return _ask_save(
             parent,
             self._view.browse_text,
-            "" if start is None else str(start),
-            _file_filters(self._view.extensions),
-            options=options,
+            start,
+            self._view.extensions,
+            confirms_overwrite=self._view.confirms_overwrite,
+            replace_question=self._view.replace_question_text,
         )
-        if picked == "":
-            return ""
-        path = with_extension(Path(picked), self._view.extensions)
-        # Qt asked about the name as typed: the extension may name a file it didn't ask about
-        if path != Path(picked) and path.exists() and self._view.confirms_overwrite:
-            answer = QMessageBox.question(
-                parent,
-                self._view.browse_text,
-                self._view.replace_question_text.format(name=path.name),
-            )
-            if answer != QMessageBox.StandardButton.Yes:
-                return ""
-        return str(path)
 
 
 class QtFolderPathInputRenderer(_QtPathInputRenderer[PathInputViewLike]):
@@ -812,9 +840,7 @@ class QtFolderPathInputRenderer(_QtPathInputRenderer[PathInputViewLike]):
     def ask(self, parent: QWidget) -> str:
         path = self._view.path
         start = path if path is not None else self._view.start_folder()
-        return QFileDialog.getExistingDirectory(
-            parent, self._view.browse_text, "" if start is None else str(start)
-        )
+        return _ask_folder(parent, self._view.browse_text, start)
 
 
 class SliderViewLike(ViewLike, Protocol):
@@ -1384,6 +1410,7 @@ class TableViewLike(ViewLike, Protocol):
     editable_columns: list[int]
     cell_edited: Signal[int, int, str]
     cell_widgets: dict[int, CellWidget]
+    file_texts: dict[str, str]
     cell_clicked: Signal[int, int]
     cell_styles: dict[tuple[int, int], CellStyle]
     header_groups: list[HeaderGroup]
@@ -1391,6 +1418,7 @@ class TableViewLike(ViewLike, Protocol):
 
     def emit_cell_edited(self, row: int, column: int, text: str) -> None: ...
     def mark_text(self, mark: NodeMark) -> str: ...
+    def cell_widget(self, row: int, column: int) -> CellWidget | None: ...
     def shown_cell_styles(self) -> dict[tuple[int, int], CellStyle]: ...
     def column_checked(self, column: int) -> bool | None: ...
     def check_all(self, column: int, *, is_checked: bool) -> None: ...
@@ -1802,24 +1830,35 @@ class QtTableRenderer(QtWidgetRenderer[TableViewLike, QFilterTable]):
         self._view.row_activated.emit(self._view.shown_rows[index.row()])
 
     def _browse(self, position: int, column: int) -> None:
-        """Pick a file in Qt's dialog, its path then the cell's; nothing if cancelled.
+        """Pick a path in the cell's Qt dialog, then the cell's text; nothing if cancelled.
 
-        The dialog opens in the folder of the cell's path, else in the first server root.
+        A file's, a folder's, or one to save to, as the cell's widget says. The dialog opens
+        on the cell's path, else in the widget's `start_folder`.
         """
         assert self._rendered_object is not None
-        widget = self._view.cell_widgets[column]
-        cells = self._view.rows[self._view.shown_rows[position]]
+        row = self._view.shown_rows[position]
+        widget = self._view.cell_widget(row, column)
+        assert widget is not None  # its button drawn for it
+        cells = self._view.rows[row]
         text = cells[column].strip() if column < len(cells) else ""
-        roots = widget.server_roots
-        start = Path(text).parent if text != "" else (roots[0] if roots else None)
-        picked, _selected_filter = QFileDialog.getOpenFileName(
-            self._rendered_object,
-            widget.text,
-            "" if start is None else str(start),
-            _file_filters(widget.extensions),
-        )
+        path = widget.path(text) if text != "" else None
+        parent, title = self._rendered_object, widget.text
+        if widget.kind is CellKind.FOLDER_PATH:
+            picked = _ask_folder(parent, title, path or widget.start_folder())
+        elif widget.kind is CellKind.SAVE_PATH:
+            picked = _ask_save(
+                parent,
+                title,
+                path or widget.start_folder(),
+                widget.extensions,
+                confirms_overwrite=widget.confirms_overwrite,
+                replace_question=self._view.file_texts.get("replace_question", "{name}"),
+            )
+        else:
+            start = path.parent if path is not None else widget.start_folder()
+            picked = _ask_file(parent, title, start, widget.extensions)
         if picked != "":
-            self._rendered_object.table.set_text(position, column, picked)
+            self._rendered_object.table.set_text(position, column, widget.path_text(Path(picked)))
 
     def _check_all(self, column: int) -> None:
         if column in self._view.editable_columns:

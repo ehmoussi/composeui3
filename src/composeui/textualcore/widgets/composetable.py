@@ -18,8 +18,14 @@ from composeui.core.view import (
     CellWidget,
     HeaderGroup,
     replace_cell,
+    with_extension,
 )
-from composeui.textualcore.widgets.composefilepathinput import file_picker
+from composeui.textualcore.widgets.composefilepathinput import (
+    ReplaceFileScreen,
+    file_picker,
+    folder_picker,
+    save_picker,
+)
 from composeui.textualcore.widgets.composetree import MARKS
 
 if TYPE_CHECKING:
@@ -28,9 +34,12 @@ if TYPE_CHECKING:
     from textual import events
     from textual.app import ComposeResult
     from textual.binding import BindingType
+    from textual_fspicker import FileOpen, FileSave, SelectDirectory
 
 #: the first column's cell of a selected row, in a table selecting several rows
 _CHECK = "✓"
+#: the kinds of cells holding a path that their "…" picks
+_PATH_KINDS = (CellKind.FILE_PATH, CellKind.FOLDER_PATH, CellKind.SAVE_PATH)
 #: `events.Click.chain` of a double click's second click
 _DOUBLE_CLICK = 2
 #: a check box cell or a check-all header, by whether it's checked (None: some rows)
@@ -135,10 +144,12 @@ class ComposeTable(DataTable[Text]):
     row on Enter, after its selection, and on a double click that edits or clicks nothing.
 
     The user edits the cells of `editable_columns` in a `ComposeRowEditor`: F2 opens it
-    on the cursor's row, a double click on the clicked cell's. It types file paths too,
-    whose cells show the path and "[…]": a click on an editable one opens textual-fspicker's
-    file picker (see `file_picker`), the cell taking the file picked. `cell_edited` emits each
-    cell the user changed: its row, its column (without the check column) and its text.
+    on the cursor's row, a double click on the clicked cell's. It types paths too, whose
+    cells show the path and "[…]": a click on an editable one opens textual-fspicker's
+    picker of a file, a folder or a file to save (see `file_picker`), the cell taking the
+    path picked. A `CellWidget.path_by` column's widget is that of each row's kind.
+    `cell_edited` emits each cell the user changed: its row, its column (without the check
+    column) and its text.
 
     The columns of `cell_widgets` show widgets as text: a check box as a box, which a
     click or Space (the cursor row's first) toggles when editable; a combobox as its text
@@ -172,6 +183,8 @@ class ComposeTable(DataTable[Text]):
         self.check_all_clicked: Signal[int] = Signal()
         self.editable_columns: list[int] = []
         self.cell_widgets: dict[int, CellWidget] = {}
+        #: the texts asking before a save path replaces a file (see `FILE_TEXTS`)
+        self.file_texts: dict[str, str] = {}
         self._checked_columns: dict[int, bool | None] = {}
         self._sort: tuple[int, bool] | None = None
         self._selected_rows: list[int] = []
@@ -250,8 +263,15 @@ class ComposeTable(DataTable[Text]):
         self._clear_caches()
         self.refresh()
 
-    def _kind(self, column: int) -> CellKind | None:
+    def _widget(self, column: int, row: int | None = None) -> CellWidget | None:
+        """Get a column's widget, or that of its cell in `row`: its kind's for `path_by`."""
         widget = self.cell_widgets.get(column)
+        if widget is None or row is None:
+            return widget
+        return widget.for_row(self._rows[row] if row < len(self._rows) else [])
+
+    def _kind(self, column: int, row: int | None = None) -> CellKind | None:
+        widget = self._widget(column, row)
         return None if widget is None else widget.kind
 
     def _style(self, row: int, column: int) -> CellStyle:
@@ -274,6 +294,7 @@ class ComposeTable(DataTable[Text]):
         """Show a cell's text, or its widget's."""
         text = cells[column] if column < len(cells) else ""
         widget = self.cell_widgets.get(column)
+        widget = None if widget is None else widget.for_row(cells)
         if widget is None:
             return Text(text)
         if widget.kind is CellKind.CHECK_BOX:
@@ -282,7 +303,7 @@ class ComposeTable(DataTable[Text]):
             return Text(f"{text} \u25be")
         if widget.kind is CellKind.BUTTON:
             return Text.assemble(text, " ", (f"[{widget.text}]", "bold"))
-        if widget.kind is CellKind.FILE_PATH:
+        if widget.kind.is_path:
             return Text.assemble(text, " ", ("[\u2026]", "bold"))
         return Text(text, style="underline")
 
@@ -343,12 +364,12 @@ class ComposeTable(DataTable[Text]):
         if self._is_multiple:
             self._toggle(row)
         column = event.style.meta.get("column", -1) - (1 if self._is_multiple else 0)
-        kind = self._kind(column)
+        kind = self._kind(column, row)
         is_enabled = self._style(row, column).is_enabled
         if is_enabled and kind in (CellKind.BUTTON, CellKind.LINK):
             if event.chain == 1:
                 self.cell_clicked.emit(row, column)
-        elif is_enabled and column in self._editable_columns(kind=kind):
+        elif is_enabled and column in self._editable_columns(kind=kind, row=row):
             self._edit_clicked(row, column, kind, event.chain)
         elif event.chain == _DOUBLE_CLICK:
             self.row_activated.emit(row)
@@ -359,7 +380,7 @@ class ComposeTable(DataTable[Text]):
             self._toggle_check(row, column)
         elif kind is CellKind.COMBOBOX:
             self._pick(row, column)
-        elif kind is CellKind.FILE_PATH and chain == 1:
+        elif kind is not None and kind.is_path and chain == 1:
             self._browse(row, column)
         elif chain == _DOUBLE_CLICK:
             self._edit(row, column)
@@ -368,7 +389,7 @@ class ComposeTable(DataTable[Text]):
         if action == "edit_row":
             is_editable = any(
                 len(self._editable_columns(kind=kind)) > 0
-                for kind in (None, CellKind.COMBOBOX, CellKind.FILE_PATH)
+                for kind in (None, CellKind.COMBOBOX, *_PATH_KINDS, CellKind.PATH_BY_KIND)
             )
             return is_editable and self.show_cursor
         if action == "toggle_check":
@@ -393,23 +414,21 @@ class ComposeTable(DataTable[Text]):
     def _editable_columns(self, kind: CellKind | None = None, row: int | None = None) -> list[int]:
         """Get the `editable_columns` whose cells show `kind`, in order: typed in if None.
 
-        Those whose cell in `row`, if given, isn't disabled.
+        Those whose cell in `row`, if given, isn't disabled, and shows `kind` in that row.
         """
         return sorted(
             column
             for column in set(self.editable_columns)
             if 0 <= column < len(self._headers)
-            and self._kind(column) is kind
+            and self._kind(column, row) is kind
             and (row is None or self._style(row, column).is_enabled)
         )
 
     def _typed_columns(self, row: int) -> list[int]:
         """Get the `editable_columns` the user types in, in `row`: plain ones and paths."""
+        kinds = (None, *_PATH_KINDS)
         return sorted(
-            [
-                *self._editable_columns(row=row),
-                *self._editable_columns(kind=CellKind.FILE_PATH, row=row),
-            ]
+            column for kind in kinds for column in self._editable_columns(kind=kind, row=row)
         )
 
     def _set_cell(self, row: int, column: int, text: str) -> None:
@@ -418,11 +437,13 @@ class ComposeTable(DataTable[Text]):
             return
         self._rows = replace_cell(self._rows, row, column, text)
         check = 1 if self._is_multiple else 0
-        self.update_cell_at(
-            Coordinate(row, column + check),
-            self._cell(row, column, self._rows[row]),
-            update_width=True,
-        )
+        # the whole row: a path cell's widget may follow the kind this cell gives
+        for shown in range(len(self._headers)):
+            self.update_cell_at(
+                Coordinate(row, shown + check),
+                self._cell(row, shown, self._rows[row]),
+                update_width=True,
+            )
         self.cell_edited.emit(row, column, text)
 
     def _toggle_check(self, row: int, column: int) -> None:
@@ -447,20 +468,51 @@ class ComposeTable(DataTable[Text]):
         self.app.push_screen(picker, apply)
 
     def _browse(self, row: int, column: int) -> None:
-        """Pick a file in the cell's directory, its path then the cell's text."""
+        """Pick a path from the cell's, then the cell's text: a file's, a folder's, or one to save.
+
+        A file to save that exists is picked once the user agrees to replace it, with
+        `confirms_overwrite`; nothing is written.
+        """
         assert row < len(self._rows)  # see `_toggle_check`
         cells = self._rows[row]
         text = cells[column] if column < len(cells) else ""
-        widget = self.cell_widgets[column]
+        widget = self._widget(column, row)
+        assert widget is not None  # a path's cell, clicked as one
+
+        def take(picked: Path | None) -> None:
+            shown = None if picked is None else widget.path_text(picked)
+            # the rows the picker was opened on, or the edit would land on another row
+            if shown is not None and shown != text and self._rows is rows:
+                self._set_cell(row, column, shown)
 
         def apply(picked: Path | None) -> None:
-            # the rows the picker was opened on, or the edit would land on another row
-            if picked is not None and str(picked) != text and self._rows is rows:
-                self._set_cell(row, column, str(picked))
+            if picked is None or widget.kind is not CellKind.SAVE_PATH:
+                take(picked)
+                return
+            picked = with_extension(picked, widget.extensions)
+            if not widget.confirms_overwrite or not picked.exists():
+                take(picked)
+                return
+            question = ReplaceFileScreen(
+                self.file_texts.get("replace_question", "{name}").format(name=picked.name),
+                self.file_texts.get("replace", ""),
+                self.file_texts.get("cancel", ""),
+            )
+            self.app.push_screen(
+                question, lambda is_replaced: take(picked if is_replaced else None)
+            )
 
         rows = self._rows
-        start = widget.server_roots[0] if widget.server_roots else None
-        self.app.push_screen(file_picker(text, widget.extensions, widget.text, start), apply)
+        path = str(widget.path(text)) if text.strip() != "" else ""
+        start = widget.start_folder()
+        picker: FileOpen | SelectDirectory | FileSave
+        if widget.kind is CellKind.FOLDER_PATH:
+            picker = folder_picker(path, widget.text, start)
+        elif widget.kind is CellKind.SAVE_PATH:
+            picker = save_picker(path, widget.extensions, widget.text, start)
+        else:
+            picker = file_picker(path, widget.extensions, widget.text, start)
+        self.app.push_screen(picker, apply)
 
     def _edit(self, row: int, focused: int) -> None:
         assert row < len(self._rows)  # see `_toggle_check`
