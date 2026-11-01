@@ -183,9 +183,14 @@ def render_dirty(dirty: Mapping[str, WebRenderer[Any]]) -> Markup:
     """Render every dirty fragment as an out-of-band swap.
 
     A fragment already contained in another dirty fragment (e.g. a row inside a group
-    that also changed) is dropped, otherwise htmx would swap it twice.
+    that also changed) is dropped, otherwise htmx would swap it twice. So is one not in
+    the page (on a page not shown): its page brings it along once shown.
     """
-    fragments = {widget_id: renderer.to_html(oob=True) for widget_id, renderer in dirty.items()}
+    fragments = {
+        widget_id: renderer.to_html(oob=True)
+        for widget_id, renderer in dirty.items()
+        if renderer.is_in_page
+    }
     nested = {
         nested_id
         for widget_id, fragment in fragments.items()
@@ -294,6 +299,18 @@ class WebRenderer(Renderer[TView, str]):
         drawn apart from it (see `_refresh_enabled`).
         """
         return self._view.is_enabled and (self.parent is None or self.parent.is_enabled)
+
+    @property
+    def is_in_page(self) -> bool:
+        """Whether the browser's page holds this view's fragment: not on a page not shown."""
+        renderer: WebRenderer[Any] = self
+        # a dialog is drawn at the end of the page, with its content, whatever holds it
+        while renderer.parent is not None and not isinstance(renderer, WebDialogRenderer):
+            parent = renderer.parent
+            if isinstance(parent, WebRouterRenderer) and not parent.is_current(renderer):
+                return False
+            renderer = parent
+        return True
 
     def _adopt(self, views: Iterable[View]) -> None:
         """Make this renderer the parent of `views`' renderers (see `is_enabled`)."""
@@ -5911,7 +5928,7 @@ class WebGridRenderer(WebRenderer[GridView]):
 
 #: the main column's width, following the shown page's `PageView.width`: switching pages
 #: only swaps the router, so CSS picks the width from the page neither hidden nor in a
-#: hidden slot
+#: hidden element
 _MAIN_WIDTHS = (
     " has-[[data-width=wide]:not([hidden],[hidden]_*)]:max-w-6xl"
     " has-[[data-width=full]:not([hidden],[hidden]_*)]:max-w-none"
@@ -5924,10 +5941,12 @@ def page_path(route: str) -> str:
 
 
 class WebRouterRenderer(WebRenderer[Router]):
-    """The pages, only the current one shown, and the toolbar of their links.
+    """The current page, and the toolbar of the pages' links.
 
-    Each page sits in a slot of its own, hidden unless current, which leaves the page's
-    own `is_visible` to the page. The toolbar has no fragment of its own: the main
+    Only the current page is sent, in a slot of its own, which leaves the page's own
+    `is_visible` to the page: an app's many pages don't weigh on each response, nor the
+    browser's page. Navigating swaps the router, so the page left goes, and the page
+    shown comes as it stands now. The toolbar has no fragment of its own: the main
     renderer puts it in the header, and each link swaps on its own.
     """
 
@@ -5947,16 +5966,23 @@ class WebRouterRenderer(WebRenderer[Router]):
             page.action.renderer.placement = Placement.PAGE
             page.action.renderer.href = page_path(page.route)
 
+    def is_current(self, page: WebRenderer[Any]) -> bool:
+        """Whether `page` is the renderer of the page shown."""
+        return any(
+            view.renderer is page and view.route == self._view.current_route
+            for view in self._view.pages
+        )
+
     def to_html(self, *, oob: bool = False) -> Markup:
         slots: list[str] = []
         for page in self._view.pages:
             assert isinstance(page.renderer, WebRenderer)  # a page's, which the web has
-            hidden = "" if page.route == self._view.current_route else " hidden"
-            slots.append(
-                Markup('<div data-route="{route}"{hidden}>{to_html}</div>').format(
-                    route=page.route, hidden=hidden, to_html=page.renderer.to_html()
+            if page.route == self._view.current_route:
+                slots.append(
+                    Markup('<div data-route="{route}">{to_html}</div>').format(
+                        route=page.route, to_html=page.renderer.to_html()
+                    )
                 )
-            )
         return Markup("<div {}>{}</div>").format(
             self._root_attributes(oob=oob), Markup("").join(slots)
         )

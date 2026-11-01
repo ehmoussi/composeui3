@@ -37,6 +37,11 @@ The notable changes of each release of ComposeUI. The format follows
   as "Saved" after Apply: it doesn't stop OK, and goes on the next click, check or opening.
   The pipe catalogue's Apply says so in its dialog.
 
+### Changed
+
+- The web sends only the shown page of a `Router`. A change on another page waits until that
+  page shows, so an app's other pages no longer add to each page load and response.
+
 ## [0.2.0] - 2026-10-30
 
 ### Added
