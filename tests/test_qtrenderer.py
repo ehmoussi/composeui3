@@ -151,6 +151,7 @@ from tests.markup import MARKUP, MarkupMainView
 from tests.metrics import JobsMainView
 from tests.pages import InputsPage, PagesMainView
 from tests.partial import PartialMainView, UnregisteredView
+from tests.settingsdialog import NO_FOLDER, SettingsMainView
 from tests.sidebar import SidebarMainView
 from tests.splitter import SplitterMainView, VerticalSplitterMainView
 from tests.studydialog import StudyDialogMainView
@@ -1945,6 +1946,43 @@ def test_a_content_dialog_shows_its_view_whose_buttons_leave_it_open(qtbot: QtBo
     assert dialog.isVisible()  # a folder: shown, not opened
     assert table.model().index(0, 0).data() == "beam.export"
     assert not dialog.ok_button.isEnabled()
+
+
+def test_a_dialog_s_own_buttons_and_check_show_in_qt_and_act_on_their_clicks(
+    qtbot: QtBot,
+) -> None:
+    view = SettingsMainView()
+    view.render(RendererType.QT)
+    window = _widget(view)
+    qtbot.addWidget(window)
+    window.show()
+    settings = view.settings
+    dialog = _widget(settings)
+    assert isinstance(dialog, QFormDialog)
+    apply, discard = _widget(settings.apply), _widget(settings.discard)
+    folder, log = _widget(settings.content.folder), _widget(settings.log_view)
+    assert isinstance(folder, QLineEdit)
+    assert isinstance(log, QLabel)
+    settings.open()
+    assert {apply, discard} <= set(dialog.buttons.buttons())
+    assert not log.isVisible()
+
+    folder.selectAll()
+    qtbot.keyClick(folder, Qt.Key.Key_Backspace)
+    assert log.isVisible()
+    assert dialog.isAncestorOf(log)
+    assert NO_FOLDER in log.text()
+    assert not dialog.ok_button.isEnabled()
+    assert not apply.isEnabled()
+    assert discard.isEnabled()
+
+    qtbot.keyClicks(folder, "out")
+    assert dialog.ok_button.isEnabled()
+    qtbot.mouseClick(apply, Qt.MouseButton.LeftButton)
+    assert dialog.isVisible()
+    qtbot.mouseClick(discard, Qt.MouseButton.LeftButton)
+    assert not dialog.isVisible()
+    assert view.answers == ["apply", "discard"]
 
 
 def test_a_toolbar_docks_its_actions_beside_the_pages(qtbot: QtBot) -> None:

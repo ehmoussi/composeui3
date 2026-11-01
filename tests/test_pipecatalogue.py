@@ -203,17 +203,50 @@ def test_an_edit_failing_the_form_s_checks_keeps_the_dialog_open(app: App) -> No
     assert _names(app) == ["Main line"]
 
 
-def test_an_edit_the_database_refuses_is_not_saved_and_says_why(app: App) -> None:
+def test_an_edit_to_a_name_taken_stays_open_saving_nothing_and_says_why(app: App) -> None:
     _add(app, "Main line")
     _add(app, "Return", Material.COPPER, (20.0, 2.0, 3.0))
     ret = _expanders(app)[1]
     ret.buttons.edit.clicked.emit()
+    dialog = app.main_view.edit_dialog
 
-    app.main_view.edit_dialog.form.name.text = "Main line"  # passes the form, not the table
-    app.main_view.edit_dialog.accept()
+    dialog.form.name.text = "Main line"  # passes the form, not the dialog's own check
+    dialog.accept()
 
-    assert app.main_view.status_bar.message == "Can't save the pipe: another pipe has this name."
+    assert dialog.is_visible
+    assert dialog.log_view.log_message == "- Another pipe is already named 'Main line'."
     assert _names(app) == ["Main line", "Return"]
+
+
+@pytest.mark.parametrize("answer", ["apply", "save"])
+def test_an_edit_the_database_refuses_keeps_the_dialog_open_and_says_why_there(
+    app: App, answer: str
+) -> None:
+    _add(app, "Main line")
+    _expanders(app)[0].buttons.edit.clicked.emit()
+    dialog = app.main_view.edit_dialog
+    press = dialog.apply.click if answer == "apply" else dialog.accept
+
+    dialog.form.thickness.value = 80.0  # passes the form, not the table: wider than the radius
+    press()
+
+    assert dialog.is_visible
+    message = "- Can't save the pipe: its wall must be thinner than its radius."
+    assert dialog.log_view.log_message == message
+    assert _thickness(app, "Main line") == 5.0
+    dialog.form.thickness.value = 6.0
+    press()
+    assert dialog.is_visible is (answer == "apply")
+    assert _thickness(app, "Main line") == 6.0
+    # said once the dialog closes, not behind it while open
+    said = "Added 'Main line'" if answer == "apply" else "Saved 'Main line'"
+    assert app.main_view.status_bar.message == said
+
+
+def _thickness(app: App, name: str) -> float:
+    pipe = app.model.pipes.get(name)
+    assert pipe is not None
+    return pipe.thickness
 
 
 @pytest.mark.parametrize(

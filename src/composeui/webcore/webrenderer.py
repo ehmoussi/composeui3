@@ -60,6 +60,7 @@ from composeui.core.view import (
     ChartKind,
     ChartView,
     ConsoleView,
+    DialogButtonView,
     DialogKind,
     DialogView,
     ExitAppAction,
@@ -1629,6 +1630,34 @@ class WebButtonRenderer(WebRenderer[ButtonViewLike]):
         if event != "click" or not self.is_enabled:
             super().dispatch(event, form)
         self._view.clicked.emit()
+
+
+class WebDialogButtonRenderer(WebButtonRenderer):
+    """A dialog's own button, e.g. Apply: its click goes through its dialog, which checks first.
+
+    Its dialog swaps closed when the click closes it, as on OK.
+    """
+
+    _role = "dialog_button"
+
+    def __init__(self, view: DialogButtonView) -> None:
+        super().__init__(view)
+        self._dialog_button = view
+        # `closes` and `checks` show nothing (each click reads them): a redraw is harmless
+        self._refresh_dispatcher.update(
+            dict.fromkeys(("is_blocked", "closes", "checks"), self._mark_dirty)
+        )
+
+    @property
+    def is_enabled(self) -> bool:
+        """Whether it can be pressed: enabled, with its dialog, and no check of its fails."""
+        return super().is_enabled and not self._dialog_button.is_blocked
+
+    def dispatch(self, event: str, form: Mapping[str, str]) -> None:
+        # a disabled button can't be clicked: a post saying otherwise is refused
+        if event != "click" or not self.is_enabled:
+            WebRenderer.dispatch(self, event, form)
+        self._dialog_button.click()
 
 
 class ProgressBarViewLike(ViewLike, Protocol):
@@ -4985,10 +5014,12 @@ class WebFormDialogRenderer(WebDialogRenderer):
         #: whether more than OK changed since the dialog was last sent: then it swaps whole
         self._is_whole = False
         self._refresh_dispatcher["is_accept_enabled"] = self._refresh_accept
+        self._refresh_dispatcher["has_failing_check"] = self._refresh_accept
 
     def render(self) -> None:
         super().render()
-        self._adopt([self._form_view.content])
+        view = self._form_view
+        self._adopt([view.content, view.log_view, *view.buttons])
 
     @property
     def accept_id(self) -> str:
@@ -5024,11 +5055,13 @@ class WebFormDialogRenderer(WebDialogRenderer):
         labelledby = Markup(' aria-labelledby="{}"').format(title_id) if view.title else ""
         describedby = Markup(' aria-describedby="{}"').format(text_id) if view.text else ""
         form_html = _view_html(view.content)
+        log_html = _view_html(view.log_view)
+        buttons = Markup("").join(_view_html(button) for button in view.buttons)
         return Markup(
             '<dialog {root_attributes} class="modal" data-dialog'
             '{labelledby}{describedby}{cancel} hx-swap="none">'
-            '<div class="modal-box flex flex-col gap-4">{title}{text}{form_html}'
-            '<div class="modal-action">{reject}{accept_html}</div>'
+            '<div class="modal-box flex flex-col gap-4">{title}{text}{form_html}{log_html}'
+            '<div class="modal-action">{reject}{buttons}{accept_html}</div>'
             "</div></dialog>"
         ).format(
             root_attributes=self._root_attributes(oob=oob),
@@ -5038,13 +5071,15 @@ class WebFormDialogRenderer(WebDialogRenderer):
             title=title,
             text=text,
             form_html=form_html,
+            log_html=log_html,
             reject=reject,
+            buttons=buttons,
             accept_html=self._accept_html(oob=False),
         )
 
     def _accept_html(self, *, oob: bool) -> Markup:
         swap = Markup(' hx-swap-oob="true"') if oob else ""
-        disabled = "" if self.is_enabled and self._form_view.is_accept_enabled else " disabled"
+        disabled = "" if self.is_enabled and self._form_view.can_accept else " disabled"
         return Markup(
             '<button id="{accept_id}" type="button" class="btn btn-primary"{swap}'
             ' hx-post="/widget/{widget_id}"'
@@ -6171,6 +6206,7 @@ class WebMainRenderer(MainRenderer[MainView, str]):
 RENDERERS: Final[dict[str, Callable[[Any], Renderer[Any, Any]]]] = {
     "action": WebActionRenderer,
     "button": WebButtonRenderer,
+    "dialog_button": WebDialogButtonRenderer,
     "chart": WebChartRenderer,
     "map": WebMapRenderer,
     "checkbox": WebCheckBoxRenderer,

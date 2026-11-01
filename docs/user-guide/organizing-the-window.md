@@ -519,6 +519,95 @@ class OpenStudyDialog(ContentDialogView[FolderView]):
 Each backend shows a content dialog as it shows a form dialog: Qt a `QDialog`, Textual a
 modal screen, and the web a modal `<dialog>`, with the view above the OK and Cancel buttons.
 
+### Buttons and checks of a dialog
+
+A form or content dialog can have buttons of its own between Cancel and OK, for example
+Apply, which saves the changes and leaves the dialog open. It can also check any view it
+shows, not only a form. Declare each button as a `DialogButtonView` field of the dialog, and
+add each check with `add_check`:
+
+```python
+from typing import Optional
+
+from attrs import Factory
+
+from composeui.core.view import (
+    ContentDialogView, DialogButtonView, InputView, VerticalView, child, define_view,
+)
+
+
+@define_view
+class SettingsPanel(VerticalView):
+    folder: InputView = child(InputView, text="results")
+
+
+@define_view
+class SettingsDialog(ContentDialogView[SettingsPanel]):
+    content: SettingsPanel = Factory(SettingsPanel)
+    apply: DialogButtonView = child(DialogButtonView, text="Apply")
+
+    def __attrs_post_init__(self) -> None:
+        super().__attrs_post_init__()
+        self.accept_text = "Save"
+        self.add_check(self._has_folder, self.content.folder.text_changed)
+
+    def _has_folder(self) -> Optional[str]:
+        return None if self.content.folder.text else "Choose an output folder."
+
+
+dialog = SettingsDialog()
+dialog.apply.clicked.connect(lambda: print("Applied"))  # the app's own work
+dialog.accepted.connect(lambda: print("Saved"))
+```
+
+- **The buttons.** Each `DialogButtonView` field shows between Cancel and OK, in the order
+  of the fields (`buttons`). A click fires its `clicked`, and the dialog stays open.
+- **A button that closes.** With `closes=True`, `clicked` fires, then the dialog closes.
+  Neither `accepted` nor `rejected` fires, for example for "Close without saving".
+- **A button that checks.** By default (`checks=True`), a click runs every check first, as
+  OK does. While a check fails, the button does nothing, and the user can't press it
+  (`is_blocked`). With `checks=False`, it acts whatever the checks say.
+- **The checks.** A check returns the message to show, or `None` when it passes. It runs
+  again whenever one of the signals given to `add_check` fires, and `validate` runs the
+  checks now. A value set by code emits no signal, but OK and the checking buttons run the
+  checks anyway.
+- **The message stays in the dialog.** While a check fails, its message shows above the
+  buttons (`log_view`), and the user can't press OK. The message goes once the value is
+  fixed: the dialog doesn't close and open again.
+- **With a form.** In a form dialog, the dialog's checks come in addition to the form's. Use
+  them for what the form can't know, for example a name that another record already has.
+  The form shows its own messages.
+
+The model can still refuse what the checks let through, for example a value that only the
+database checks. Do the work in the dialog's `refusing`, rather than in the view's, and
+connect it to `accepting` for OK:
+
+```python
+# `save_settings` is the app's own work: the model raises `RefusedError` to refuse it
+def save(dialog: SettingsDialog) -> None:
+    with dialog.refusing("Can't save the settings: {error}."):
+        save_settings(dialog.content.folder.text)
+
+
+dialog.accepting.connect(lambda: save(dialog))
+dialog.apply.clicked.connect(lambda: save(dialog))
+```
+
+- **`accepting`** fires when the user presses OK and every check passes, while the dialog
+  is still open. Then the dialog closes, and `accepted` fires.
+- **A refusal keeps the dialog open.** In `accepting`, or in the `clicked` of one of the
+  dialog's buttons, a `RefusedError` in `refusing` shows its message above the buttons, as a
+  failing check's. The dialog stays open, with the user's values. The next click, or the next
+  opening, takes the message away.
+- **Say a success once the dialog closes.** The status bar is out of sight behind the open
+  dialog. Show "Saved" from `accepted`, not from `accepting` or Apply's `clicked`.
+
+Qt shows the buttons in the dialog's `QDialogButtonBox`, Textual and the web in the row of
+the dialog's buttons. In [`src/examples/pipecatalogue.py`](../../src/examples/pipecatalogue.py),
+Apply in the Edit dialog saves the pipe and leaves the dialog open. The dialog also checks
+that no other pipe has the name, and shows why the database refuses a pipe, for example a
+wall thicker than the radius.
+
 ### Replacing a file
 
 The save path input's "…" button asks before the user picks a file that exists. A path

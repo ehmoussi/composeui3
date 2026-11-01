@@ -152,6 +152,7 @@ from tests.markup import MARKUP, MarkupMainView
 from tests.metrics import JobsMainView
 from tests.pages import PagesMainView
 from tests.partial import PartialMainView, UnregisteredView
+from tests.settingsdialog import NO_FOLDER, SettingsMainView
 from tests.sidebar import SidebarMainView
 from tests.splitter import SplitterMainView, VerticalSplitterMainView
 from tests.studydialog import StudyDialogMainView
@@ -1438,6 +1439,47 @@ async def test_a_content_dialog_shows_its_view_whose_buttons_leave_it_open() -> 
 
         assert app.screen is screen
         assert str(box.table.get_cell_at(Coordinate(0, 0))) == "beam"
+
+
+@pytest.mark.asyncio
+async def test_a_dialog_s_own_buttons_and_check_show_in_textual_and_act_on_their_clicks() -> None:
+    view = SettingsMainView()
+    app = _app_of(view)
+    settings = view.settings
+    apply, discard = _widget(settings.apply), _widget(settings.discard)
+    folder, log = _widget(settings.content.folder), _widget(settings.log_view)
+    assert isinstance(folder, Input)
+
+    async with app.run_test(size=(100, 30)) as pilot:
+        await pilot.pause()
+        settings.open()
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, ComposeFormDialog)
+        buttons = list(screen.query(Button))
+        assert buttons == [screen.reject_button, apply, discard, screen.accept_button]
+        assert not log.display
+
+        folder.focus()
+        folder.action_end()
+        await pilot.press(*["backspace"] * len("results"))
+        await pilot.pause()
+        assert log.display
+        assert NO_FOLDER in str(log.render())
+        assert screen.accept_button.disabled
+        assert apply.disabled
+        assert not discard.disabled
+
+        await pilot.press(*"out")
+        await pilot.pause()
+        assert not screen.accept_button.disabled
+        await pilot.click(apply)
+        await pilot.pause()
+        assert app.screen is screen
+        await pilot.click(discard)
+        await pilot.pause()
+        assert app.screen is not screen
+    assert view.answers == ["apply", "discard"]
 
 
 @pytest.mark.asyncio

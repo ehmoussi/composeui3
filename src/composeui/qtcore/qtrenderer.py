@@ -70,6 +70,7 @@ from composeui.core.view import (
     ChartKind,
     ChartView,
     ConsoleView,
+    DialogButtonView,
     DialogKind,
     DialogView,
     ExpanderView,
@@ -1176,6 +1177,46 @@ class QtButtonRenderer(QtWidgetRenderer[ButtonViewLike, QPushButton]):
 
     def _emit_clicked(self) -> None:
         self._view.clicked.emit()
+
+
+class QtDialogButtonRenderer(QtButtonRenderer):
+    """A dialog's own button, e.g. Apply: its click goes through its dialog, which checks first."""
+
+    def __init__(self, view: DialogButtonView) -> None:
+        super().__init__(view)
+        self._dialog_button = view
+        self._refresh_dispatcher.update(
+            {
+                "is_enabled": self._refresh_button_enabled,
+                "is_blocked": self._refresh_is_blocked,
+                "closes": self._noop,
+                "checks": self._noop,
+            }
+        )
+
+    def render(self) -> None:
+        super().render()
+        assert self._rendered_object is not None
+        # not the dialog's default button: Enter is still OK
+        self._rendered_object.setAutoDefault(False)
+
+    # each is told its own field's new value, not yet the view's
+    def _refresh_button_enabled(
+        self, _view: ButtonViewLike, rendered_object: QPushButton, value: bool
+    ) -> None:
+        rendered_object.setEnabled(value and not self._dialog_button.is_blocked)
+
+    def _refresh_is_blocked(
+        self, _view: ButtonViewLike, rendered_object: QPushButton, value: bool
+    ) -> None:
+        rendered_object.setEnabled(self._dialog_button.is_enabled and not value)
+
+    @staticmethod
+    def _noop(_view: ButtonViewLike, _rendered_object: QPushButton, _value: bool) -> None:
+        pass  # read on each click
+
+    def _emit_clicked(self) -> None:
+        self._dialog_button.click()
 
 
 class ProgressBarViewLike(ViewLike, Protocol):
@@ -2290,6 +2331,7 @@ class QtFormDialogRenderer(QtWidgetRenderer[OkCancelDialogView, QFormDialog]):
                 "accept_text": self._refresh_accept_text,
                 "reject_text": self._refresh_reject_text,
                 "is_accept_enabled": self._refresh_is_accept_enabled,
+                "has_failing_check": self._refresh_has_failing_check,
             }
         )
 
@@ -2300,6 +2342,13 @@ class QtFormDialogRenderer(QtWidgetRenderer[OkCancelDialogView, QFormDialog]):
             content = _widget_of(self._view.content)
             assert content is not None
             dialog.set_form(content)
+            log = _widget_of(self._view.log_view)
+            assert log is not None
+            dialog.set_log(log)
+            for button in self._view.buttons:
+                widget = _widget_of(button)
+                assert isinstance(widget, QPushButton)  # this backend renders a dialog's buttons
+                dialog.add_button(widget)
             dialog.answered_ok.connect(self._view.accept)
             dialog.answered_cancel.connect(self._view.reject)
             dialog.dismissed.connect(self._view.dismiss)
@@ -2335,11 +2384,18 @@ class QtFormDialogRenderer(QtWidgetRenderer[OkCancelDialogView, QFormDialog]):
     ) -> None:
         rendered_object.cancel_button.setText(value)
 
+    # each is told its own field's new value, not yet the view's
     @staticmethod
     def _refresh_is_accept_enabled(
-        _view: OkCancelDialogView, rendered_object: QFormDialog, value: bool
+        view: OkCancelDialogView, rendered_object: QFormDialog, value: bool
     ) -> None:
-        rendered_object.ok_button.setEnabled(value)
+        rendered_object.ok_button.setEnabled(value and not view.has_failing_check)
+
+    @staticmethod
+    def _refresh_has_failing_check(
+        view: OkCancelDialogView, rendered_object: QFormDialog, value: bool
+    ) -> None:
+        rendered_object.ok_button.setEnabled(view.is_accept_enabled and not value)
 
 
 class QtPageRenderer(QtWidgetRenderer[PageView, QWidget]):
@@ -3190,6 +3246,7 @@ class QtToolBarRenderer(QtWidgetRenderer[ToolBar, QToolBar]):
 RENDERERS: dict[str, Callable[[Any], Renderer[Any, Any]]] = {
     "action": QtActionRenderer,
     "button": QtButtonRenderer,
+    "dialog_button": QtDialogButtonRenderer,
     "chart": QtChartRenderer,
     "map": _map_renderer,
     "checkbox": QtCheckBoxRenderer,

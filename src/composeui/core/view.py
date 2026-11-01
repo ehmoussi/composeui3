@@ -100,6 +100,7 @@ __all__ = [
     "ContentDialogView",
     "DateInputMixin",
     "DateInputView",
+    "DialogButtonView",
     "DialogKind",
     "DialogView",
     "EditRefusedError",
@@ -159,6 +160,7 @@ __all__ = [
     "Menu",
     "MetricView",
     "NodeMark",
+    "OkCancelDialogView",
     "Orientation",
     "PageView",
     "PageWidth",
@@ -618,12 +620,16 @@ class View:
             main_view = None if self._main_view is None else self._main_view()
             if main_view is None:  # not shown by an application: nowhere to show it
                 raise
-            reason = error.args[0] if error.args else ""
-            if not isinstance(reason, TranslatedText):
-                reason = self.tr(str(reason))
-            main_view.status_bar.show_message(message.format(error=reason))
+            main_view.status_bar.show_message(self._refusal(message, error))
             if _editing_cell.get():
                 raise EditRefusedError from error
+
+    def _refusal(self, message: str, error: RefusedError) -> str:
+        """Get `message` telling the user of `error`, its reason translated, as ``{error}``."""
+        reason = error.args[0] if error.args else ""
+        if not isinstance(reason, TranslatedText):
+            reason = self.tr(str(reason))
+        return message.format(error=reason)
 
     def retranslate(self) -> None:
         """Update text that `tr` alone doesn't follow, e.g. built from other text.
@@ -5767,7 +5773,194 @@ FormT = TypeVar("FormT", bound=FormView)
 
 
 @define_view
-class TypedFormDialogView(DialogView, Generic[FormT]):
+class DialogButtonView(ButtonView):
+    """A button of a dialog's own, between Cancel and OK, e.g. Apply: a field of the dialog.
+
+    Clicking it fires `clicked`, and the dialog stays open. With `closes`, the dialog closes
+    once `clicked` has fired, without `accepted` or `rejected`, unless the app's work refused
+    the change in it (`OkCancelDialogView.refusing`). With `checks`, it runs the dialog's
+    checks first, as OK does: it does nothing while one fails, and can't be pressed
+    meanwhile (`is_blocked`).
+    """
+
+    _renderer_key = "dialog_button"
+
+    variant: ButtonVariant = attrs.field(default=ButtonVariant.SECONDARY)
+    #: whether clicking it closes the dialog
+    closes: bool = attrs.field(default=False)
+    #: whether it runs the dialog's checks first, and waits for them to pass
+    checks: bool = attrs.field(default=True)
+    #: set by its dialog: it checks, and a check fails, so it can't be pressed
+    is_blocked: bool = attrs.field(default=False, init=False)
+    #: its dialog's answer to a click, once the dialog is built; not the dialog, not a child
+    _answer_click: Optional[Callable[[], None]] = attrs.field(
+        default=None, init=False, repr=False, eq=False, metadata={OMIT: True}
+    )
+
+    def click(self) -> None:
+        """Act as the user's click: through its dialog, which checks and closes as asked."""
+        if self._answer_click is None:
+            self.clicked.emit()
+        else:
+            self._answer_click()
+
+
+@define_view
+class OkCancelDialogView(DialogView):
+    """A modal showing a view above its buttons: Cancel, its own, then OK.
+
+    The base of `ContentDialogView` and `TypedFormDialogView`. Its own buttons are its
+    `DialogButtonView` fields (`buttons`), e.g. Apply. Its own checks (`add_check`) are
+    about any view it shows: while one fails, its message shows above the buttons, and OK
+    can't be pressed. The answer comes through `accepted` or `rejected`. To do the work of
+    OK while the dialog is open, e.g. a save that the model may refuse, connect to
+    `accepting` and do it in `refusing`: a refusal then keeps the dialog open.
+    """
+
+    #: whether OK can be pressed, as the app or the form says; a failing check also stops it
+    is_accept_enabled: bool = attrs.field(default=True)
+    #: a check of the dialog's own failed when last run (`validate`)
+    has_failing_check: bool = attrs.field(default=False, init=False)
+    #: the message of the dialog's own checks, above its buttons
+    log_view: LogView = attrs.field(factory=LogView)
+    #: the user pressed OK and every check passed: the dialog is still open
+    accepting: SignalNoArgs = attrs.Factory(SignalNoArgs)
+    _checks: list[Validator] = attrs.field(
+        factory=list, init=False, repr=False, metadata={OMIT: True}
+    )
+    #: the work of the answer being given refused its change: the dialog stays open
+    _is_refused: bool = attrs.field(
+        default=False, init=False, repr=False, eq=False, metadata={OMIT: True}
+    )
+
+    if TYPE_CHECKING:
+
+        @property
+        def content(self) -> View:
+            """Get the view the dialog shows above its buttons."""
+
+    def __attrs_post_init__(self) -> None:
+        super().__attrs_post_init__()
+        self.kind = DialogKind.CONFIRM
+        self.log_view.is_visible = False
+        for button in self.buttons:
+            button._answer_click = functools.partial(self.click, button)  # noqa: SLF001
+
+    @property
+    def buttons(self) -> list[DialogButtonView]:
+        """Get the dialog's own buttons, in order: they show between Cancel and OK."""
+        return [view for view in self.children_views if isinstance(view, DialogButtonView)]
+
+    @property
+    def can_accept(self) -> bool:
+        """Whether OK can be pressed: enabled, and no check of the dialog's own fails."""
+        return self.is_accept_enabled and not self.has_failing_check
+
+    @property
+    def is_valid(self) -> bool:
+        """Whether no check shown fails; as last checked: a check not run yet passes."""
+        return not self.has_failing_check
+
+    def add_check(self, validator: Validator, *signals: Signal[Unpack[tuple[Any, ...]]]) -> None:
+        """Register a check of the dialog's own, run again whenever any of `signals` fires.
+
+        `validator` returns the message to show, or None when it passes. Like a form's
+        (`FormView.add_validator`), but about any view the dialog shows. It doesn't run
+        now: call `validate` for a first check. OK runs every check.
+        """
+        self._checks.append(validator)
+        for signal in signals:
+            signal.connect(self.validate)
+
+    def validate(self, *_args: Any) -> None:
+        """Run the dialog's own checks, and show the message of each failing one.
+
+        Takes (and ignores) any positional args, to be connected to signals of any arity.
+        """
+        messages = [message for message in (check() for check in self._checks) if message]
+        self._show_messages(messages)
+        self.has_failing_check = len(messages) > 0
+        self._follow_checks()
+
+    @contextlib.contextmanager
+    def refusing(self, message: str) -> Iterator[None]:
+        """Show the model's refusal of the block's change in the dialog, which stays open.
+
+        As `View.refusing`, but the message shows above the dialog's buttons, as a failing
+        check's does, rather than in the status bar. In `accepting`, or in the `clicked` of
+        a button of its own that closes, the refusal keeps the dialog open. The next click,
+        or the next opening, takes the message away.
+        """
+        try:
+            yield
+        except RefusedError as error:
+            self._is_refused = True
+            self._show_messages([self._refusal(message, error)])
+
+    def check(self) -> None:
+        """Run every check of the dialog now."""
+        self.validate()
+
+    def accept(self) -> None:
+        """Close the dialog with its accepting answer, once every check passes.
+
+        Ignored unless it's open; while a check fails, it stays open, showing why.
+        """
+        if not self.is_visible:
+            return
+        self._forget_refusal()
+        self.check()
+        if not self.can_accept:
+            return
+        self.accepting.emit()
+        if not self._is_refused:
+            super().accept()
+
+    def click(self, button: DialogButtonView) -> None:
+        """Answer a click of `button`, one of its own: check, fire `clicked`, then close.
+
+        Ignored unless the dialog is open, or while a check fails and the button checks. It
+        closes only for a button that closes, and unless `clicked` refused the change.
+        """
+        if not self.is_visible:
+            return
+        self._forget_refusal()
+        if button.checks:
+            self.check()
+            if not self.is_valid:
+                return
+        button.clicked.emit()
+        if button.closes and not self._is_refused:
+            self.is_visible = False
+
+    def open(self) -> None:
+        """Show the dialog, without the refusal of an earlier answer."""
+        self._forget_refusal()
+        super().open()
+
+    def _forget_refusal(self) -> None:
+        # a new answer, or a new opening: the message of the checks, as they last ran
+        if self._is_refused:
+            self._is_refused = False
+            self.validate()
+
+    def _show_messages(self, messages: list[str]) -> None:
+        """Show `messages` above the buttons, each an error; none hides the message."""
+        if len(messages) > 0:
+            self.log_view.log_message = "- " + "\n- ".join(messages)
+            self.log_view.log_type = LogType.ERROR
+        else:
+            self.log_view.log_message = ""
+            self.log_view.log_type = LogType.INFO
+        self.log_view.is_visible = len(messages) > 0
+
+    def _follow_checks(self) -> None:
+        for button in self.buttons:
+            button.is_blocked = button.checks and not self.is_valid
+
+
+@define_view
+class TypedFormDialogView(OkCancelDialogView, Generic[FormT]):
     """A modal holding a form, e.g. editing a record from its Edit button, with OK and Cancel.
 
     Pass a form, or give a subclass its typed ``form`` default. Its `text` shows above it. OK can't
@@ -5780,12 +5973,9 @@ class TypedFormDialogView(DialogView, Generic[FormT]):
     _renderer_key = "form_dialog"
 
     form: FormT = attrs.field()
-    #: whether OK can be pressed: no check shown fails on the form
-    is_accept_enabled: bool = attrs.field(default=True)
 
     def __attrs_post_init__(self) -> None:
         super().__attrs_post_init__()
-        self.kind = DialogKind.CONFIRM
         forms: list[FormView] = [self.form]
         while len(forms) > 0:
             form = forms.pop()
@@ -5797,21 +5987,20 @@ class TypedFormDialogView(DialogView, Generic[FormT]):
                     row.checked.connect(self._follow_form)
         self._follow_form()
 
+    @property
+    def is_valid(self) -> bool:
+        """Whether no check shown fails, the form's or the dialog's own."""
+        return self.form.is_valid and super().is_valid
+
     def open(self) -> None:
         """Show the dialog, OK as the form's checks last left it."""
         self._follow_form()
         super().open()
 
-    def accept(self) -> None:
-        """Close the dialog with its accepting answer, once every check of the form passes.
-
-        Ignored unless it's open; while a check fails, it stays open, showing why.
-        """
-        if not self.is_visible:
-            return
+    def check(self) -> None:
+        """Run every check now: the form's, then the dialog's own."""
         self.form.check()
-        if self.form.is_valid:
-            super().accept()
+        super().check()
 
     @property
     def content(self) -> FormT:
@@ -5820,6 +6009,7 @@ class TypedFormDialogView(DialogView, Generic[FormT]):
 
     def _follow_form(self) -> None:
         self.is_accept_enabled = self.form.is_valid
+        self._follow_checks()
 
 
 @define_view
@@ -5837,7 +6027,7 @@ ContentT = TypeVar("ContentT", bound=View)
 
 
 @define_view
-class ContentDialogView(DialogView, Generic[ContentT]):
+class ContentDialogView(OkCancelDialogView, Generic[ContentT]):
     """A modal holding a view, e.g. a table to pick a file from, with OK and Cancel.
 
     Pass the view as ``content``, or give a subclass its typed ``content`` default. Its
@@ -5851,21 +6041,6 @@ class ContentDialogView(DialogView, Generic[ContentT]):
     _renderer_key = "content_dialog"
 
     content: ContentT = attrs.field()
-    #: whether OK can be pressed
-    is_accept_enabled: bool = attrs.field(default=True)
-
-    def __attrs_post_init__(self) -> None:
-        super().__attrs_post_init__()
-        self.kind = DialogKind.CONFIRM
-
-    def accept(self) -> None:
-        """Close the dialog with its accepting answer; ignored unless it's open and OK enabled."""
-        if self.is_accept_enabled:
-            super().accept()
-
-
-#: a dialog showing a view above OK and Cancel, as the backends render it
-OkCancelDialogView = Union[TypedFormDialogView[Any], ContentDialogView[Any]]
 
 
 class Align(enum.Enum):

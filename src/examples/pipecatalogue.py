@@ -8,10 +8,11 @@ their material (in bold), a border the user drags between the two: each pipe the
 marked done once its installation date is known, with a warning until then, and selecting
 it expands its expander. A form in the sidebar adds a
 pipe, which the catalogue beside it lists at once; each pipe's Edit button changes it in a
-form dialog, and its Delete button removes it. The database checks every pipe added or
-changed (a name, positive dimensions, a wall thinner than the radius) and File saves and
-opens the views and the database together; a study saved before pipes had an installation
-date gets the column, empty, as it opens (`PipeCatalogueModel.migrations`).
+form dialog, whose Apply saves it and stays open, and its Delete button removes it. The
+database checks every pipe added or changed (a name, positive dimensions, a wall thinner
+than the radius) and File saves and opens the views and the database together; a study
+saved before pipes had an installation date gets the column, empty, as it opens
+(`PipeCatalogueModel.migrations`).
 """
 
 from __future__ import annotations
@@ -31,6 +32,7 @@ from composeui.core.view import (
     STRETCH,
     ButtonVariant,
     ButtonView,
+    DialogButtonView,
     DialogKind,
     DialogView,
     ExpanderView,
@@ -471,20 +473,30 @@ class AddPipeSidebar(SidebarView):
 
 @define_view
 class EditPipeDialog(TypedFormDialogView[PipeFormView]):
-    """A pipe's values, to change: OK saves them, once its form's checks pass."""
+    """A pipe's values, to change: Save saves them and closes, Apply saves them and stays open.
+
+    Both wait for the form's checks, and for the dialog's own: another pipe has the name.
+    When the database refuses the pipe, e.g. a wall thicker than the radius, the dialog says
+    why and stays open.
+    """
 
     form: PipeFormView = Factory(PipeFormView)
-    #: the name of the pipe edited, as it was before; the dialog's own, not shown
+    apply: DialogButtonView = child(DialogButtonView, text="Apply")
+    #: the name of the pipe edited, as the database has it; the dialog's own, not shown
     _edited_name: str = attrs.field(default="", init=False)
 
     @property
     def edited_name(self) -> str:
         return self._edited_name
 
+    def saved_as(self, name: str) -> None:
+        """Edit on the pipe as saved, named `name`: Apply may have renamed it."""
+        self._edited_name = name
+
     def edit(self, name: str) -> None:
         """Open the dialog on the pipe `name`, its form filled with the pipe's values."""
         self._edited_name = name
-        self.form.check()  # OK as these values leave it
+        self.check()  # Save as these values leave it, no message left from another pipe
         self.open()
 
     def __attrs_post_init__(self) -> None:
@@ -520,7 +532,11 @@ class PipeCatalogueMainView(MainView):
         # removing can't be undone: only once the user confirms
         self.catalogue.remove_shown.clicked.connect(self.confirm_remove.open)
         self.confirm_remove.accepted.connect(self._remove_shown)
-        self.edit_dialog.accepted.connect(self._save_edited_pipe)
+        # saved while the dialog is open: a pipe the database refuses keeps it open
+        self.edit_dialog.accepting.connect(self._save_edited_pipe)
+        self.edit_dialog.apply.clicked.connect(self._save_edited_pipe)
+        # only once closed: behind the open dialog, the status bar is out of sight
+        self.edit_dialog.accepted.connect(self._say_saved)
         shown = self.catalogue.shown
         shown.material.value_changed.connect(self.show_pipes)
         shown.min_radius.editing_finished.connect(self.show_pipes)
@@ -557,19 +573,35 @@ class PipeCatalogueMainView(MainView):
         self.edit_dialog.edit(name)
 
     def _save_edited_pipe(self, *, model: PipeCatalogueModel) -> None:
-        """Save the dialog's pipe; the database may refuse it still, e.g. a name taken."""
+        """Save the dialog's pipe; the dialog shows why the database refuses it, if it does."""
         pipe = self.edit_dialog.form.pipe()
-        with self.refusing("Can't save the pipe: {error}."):
+        with self.edit_dialog.refusing("Can't save the pipe: {error}."):
             model.pipes.update(self.edit_dialog.edited_name, pipe)
-            self.status_bar.show_message(f"Saved {pipe.name!r}")
+            self.edit_dialog.saved_as(pipe.name)
+
+    def _say_saved(self) -> None:
+        self.status_bar.show_message(f"Saved {self.edit_dialog.edited_name!r}")
 
     def _remove_shown(self, *, model: PipeCatalogueModel) -> None:
         count = model.pipes.remove(self.catalogue.shown.shown())
         self.status_bar.show_message(f"Removed {count} pipe{'' if count == 1 else 's'}")
 
     def connect_model(self, model: PipeCatalogueModel) -> None:
-        """Keep the catalogue listing the database's pipes, whatever changes them."""
+        """Keep the catalogue listing the database's pipes, whatever changes them.
+
+        The edit dialog also checks the name against the database's other pipes.
+        """
         model.pipes.changed.connect(self.show_pipes, now=True)
+        dialog = self.edit_dialog
+        dialog.add_check(
+            functools.partial(self._name_taken, model=model), dialog.form.name.text_changed
+        )
+
+    def _name_taken(self, *, model: PipeCatalogueModel) -> Optional[str]:
+        name = self.edit_dialog.form.name.text
+        if name != self.edit_dialog.edited_name and model.pipes.get(name) is not None:
+            return f"Another pipe is already named {name!r}."
+        return None
 
 
 def main() -> None:

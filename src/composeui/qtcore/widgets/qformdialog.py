@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 
 
 class QFormDialog(QDialog):
-    """A modal dialog: its text, its form, then OK and Cancel.
+    """A modal dialog: its text, its form, its checks' message, then its buttons, OK and Cancel.
 
     It reports the user's answer without closing (`answered_ok`, `answered_cancel`, and
     `dismissed` for its window closed): its view closes it, and stays open when its
@@ -52,6 +52,14 @@ class QFormDialog(QDialog):
     def set_form(self, form: QWidget) -> None:
         """Show `form` between the text and the buttons."""
         self._layout.insertWidget(1, form)
+
+    def set_log(self, log: QWidget) -> None:
+        """Show `log`, the dialog's own checks, just above the buttons."""
+        self._layout.insertWidget(self._layout.indexOf(self.buttons), log)
+
+    def add_button(self, button: QPushButton) -> None:
+        """Show `button` among Cancel and OK; clicking it answers nothing."""
+        self.buttons.addButton(button, QDialogButtonBox.ButtonRole.ActionRole)
 
     def accept(self) -> None:
         self.answered_ok.emit()
