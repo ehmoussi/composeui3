@@ -41,6 +41,8 @@ The notable changes of each release of ComposeUI. The format follows
 
 - The web sends only the shown page of a `Router`. A change on another page waits until that
   page shows, so an app's other pages no longer add to each page load and response.
+- The web sends only the shown tab of a `TabView`. Its views arrive when the user picks the
+  tab.
 
 ## [0.2.0] - 2026-10-30
 

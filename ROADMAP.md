@@ -677,8 +677,10 @@ The user guide's "Web backend" section covers what users see.
 - **Open** applies an upload to a scratch instance first (core's `load_state_data`), so a
   bad file never half-loads. Responses send `Cache-Control: no-store` and controls set
   `autocomplete="off"`, so a reload always shows the server's state.
-- **Pages.** The router sends only the shown page. A change on another page isn't sent:
-  the page brings it once shown, as navigating swaps the router.
+- **Pages and tabs.** The router sends only the shown page. A change on another page isn't
+  sent: the page brings it once shown, as navigating swaps the router. Tabs send only the
+  shown tab's views, the other panels left empty. The browser shows the tab picked at once,
+  then the answer to its post fills the tab picked and empties the tab left.
 - **Dialogs** render at the end of the page, outside the shown page's slot (a page not shown
   isn't sent, and would take them with it). The browser opens a modal `<dialog>` only from a script: `page.js`
   opens each one swapped in shown, once. A button closes its dialog in the browser

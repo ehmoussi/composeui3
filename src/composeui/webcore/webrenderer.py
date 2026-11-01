@@ -302,12 +302,14 @@ class WebRenderer(Renderer[TView, str]):
 
     @property
     def is_in_page(self) -> bool:
-        """Whether the browser's page holds this view's fragment: not on a page not shown."""
+        """Whether the browser's page holds this view's fragment: not on a page or tab not shown."""
         renderer: WebRenderer[Any] = self
         # a dialog is drawn at the end of the page, with its content, whatever holds it
         while renderer.parent is not None and not isinstance(renderer, WebDialogRenderer):
             parent = renderer.parent
-            if isinstance(parent, WebRouterRenderer) and not parent.is_current(renderer):
+            if (isinstance(parent, WebRouterRenderer) and not parent.is_current(renderer)) or (
+                isinstance(parent, WebTabPageRenderer) and not parent.is_current
+            ):
                 return False
             renderer = parent
         return True
@@ -5768,6 +5770,7 @@ class WebTabPageRenderer(WebRenderer[TabPage]):
     """A tab's views in a column, which its tabs put in a panel under its tab.
 
     Its title, visibility and enabled state are its tab's too: a change swaps its tabs.
+    Only the current tab's views are sent: another tab's column is empty until picked.
     """
 
     _role = "tab_page"
@@ -5786,9 +5789,16 @@ class WebTabPageRenderer(WebRenderer[TabPage]):
         super().render()
         self._adopt(self._view.children_views)
 
+    @property
+    def is_current(self) -> bool:
+        """Whether this is the page of the tab shown, whose views are sent."""
+        return not isinstance(self.parent, WebTabsRenderer) or self.parent.is_current(self)
+
     def to_html(self, *, oob: bool = False) -> Markup:
         content = Markup("").join(
-            _view_html(view) for view in self._view.children_views if _is_shown(view)
+            _view_html(view)
+            for view in self._view.children_views
+            if self.is_current and _is_shown(view)
         )
         return Markup('<div {} class="flex flex-col gap-6">{}</div>').format(
             self._root_attributes(oob=oob), content
@@ -5804,9 +5814,11 @@ class WebTabPageRenderer(WebRenderer[TabPage]):
 class WebTabsRenderer(WebRenderer[TabView]):
     """A row of tabs (an ARIA tab list), then a panel per tab, only the current one shown.
 
-    The browser shows the tab picked, by a click or the arrow keys (see `page.js`),
-    before posting it (`select`): like every control, the tabs are never swapped back
-    after a pick, only when the server changes them.
+    Only the current tab's page is sent, the others' left empty: an app's many tabs
+    don't weigh on each response, nor the browser's page. The browser shows the tab
+    picked, by a click or the arrow keys (see `page.js`), before posting it (`select`):
+    its answer fills the panel picked and empties the one left. Like every control, the
+    tabs are never swapped back after a pick, only when the server changes them.
     """
 
     _role = "tabs"
@@ -5881,9 +5893,20 @@ class WebTabsRenderer(WebRenderer[TabView]):
             return
         if not 0 <= index < len(self._view.tabs) or index == self._view.current_index:
             return
+        left = self._view.tabs[self._view.current_index]
         with self.stop_refresh():
             self._view.current_index = index
+        dirty = _DIRTY.get()
+        assert dirty is not None  # a browser event's, collected by `handle_event`
+        for tab in (left, self._view.tabs[index]):
+            assert isinstance(tab.renderer, WebRenderer)  # a tab page's, which the web has
+            dirty[tab.renderer.widget_id] = tab.renderer
         self._view.current_changed.emit(index)
+
+    def is_current(self, page: WebRenderer[Any]) -> bool:
+        """Whether `page` is the renderer of the current tab's page."""
+        current = self._view.current_tab
+        return current is not None and current.renderer is page
 
 
 class WebGridRenderer(WebRenderer[GridView]):
