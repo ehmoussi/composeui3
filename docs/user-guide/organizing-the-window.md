@@ -599,14 +599,17 @@ dialog.apply.clicked.connect(lambda: save(dialog))
   dialog's buttons, a `RefusedError` in `refusing` shows its message above the buttons, as a
   failing check's. The dialog stays open, with the user's values. The next click, or the next
   opening, takes the message away.
-- **Say a success once the dialog closes.** The status bar is out of sight behind the open
-  dialog. Show "Saved" from `accepted`, not from `accepting` or Apply's `clicked`.
+- **Say a success in the dialog while it is open.** The status bar is out of sight behind
+  the open dialog. After Apply, call `dialog.show_message("Saved")`: the message shows above
+  the buttons as information, not as an error, and doesn't stop OK. It goes on the next
+  click, the next run of a check, or the next opening. After OK, show "Saved" in the status
+  bar from `accepted`, once the dialog is closed.
 
 Qt shows the buttons in the dialog's `QDialogButtonBox`, Textual and the web in the row of
 the dialog's buttons. In [`src/examples/pipecatalogue.py`](../../src/examples/pipecatalogue.py),
-Apply in the Edit dialog saves the pipe and leaves the dialog open. The dialog also checks
-that no other pipe has the name, and shows why the database refuses a pipe, for example a
-wall thicker than the radius.
+Apply in the Edit dialog saves the pipe, says so in the dialog, and leaves the dialog open.
+The dialog also checks that no other pipe has the name, and shows why the database refuses a
+pipe, for example a wall thicker than the radius.
 
 ### Replacing a file
 

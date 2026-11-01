@@ -163,7 +163,8 @@ the option for the web (extra `web`, the default).
   `dialog.add_check(validator, *signals)`, where the validator returns a message or `None`.
   Save from `accepting` (OK, the dialog still open) or from a button's `clicked`, inside
   `with dialog.refusing("...{error}"):`, so that a model's refusal shows in the dialog and
-  keeps it open. See
+  keeps it open. Tell the user of a success while the dialog is open with
+  `dialog.show_message(...)`, not the status bar, which the dialog hides. See
   https://ehmoussi.github.io/composeui/user-guide/organizing-the-window.html#buttons-and-checks-of-a-dialog
 - **Support Python 3.9 in view fields.** Write `Optional[int]` and `Union[int, str]`, not
   `int | None`, because `attrs` and `cattrs` evaluate the annotations at runtime. Start

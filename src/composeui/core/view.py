@@ -5814,7 +5814,8 @@ class OkCancelDialogView(DialogView):
     about any view it shows: while one fails, its message shows above the buttons, and OK
     can't be pressed. The answer comes through `accepted` or `rejected`. To do the work of
     OK while the dialog is open, e.g. a save that the model may refuse, connect to
-    `accepting` and do it in `refusing`: a refusal then keeps the dialog open.
+    `accepting` and do it in `refusing`: a refusal then keeps the dialog open. `show_message`
+    tells the user something else there, e.g. that Apply saved the changes.
     """
 
     #: whether OK can be pressed, as the app or the form says; a failing check also stops it
@@ -5830,6 +5831,10 @@ class OkCancelDialogView(DialogView):
     )
     #: the work of the answer being given refused its change: the dialog stays open
     _is_refused: bool = attrs.field(
+        default=False, init=False, repr=False, eq=False, metadata={OMIT: True}
+    )
+    #: the message shown is an answer's, a refusal or `show_message`, not the checks'
+    _shows_answer: bool = attrs.field(
         default=False, init=False, repr=False, eq=False, metadata={OMIT: True}
     )
 
@@ -5879,6 +5884,7 @@ class OkCancelDialogView(DialogView):
         """
         messages = [message for message in (check() for check in self._checks) if message]
         self._show_messages(messages)
+        self._shows_answer = False
         self.has_failing_check = len(messages) > 0
         self._follow_checks()
 
@@ -5896,6 +5902,18 @@ class OkCancelDialogView(DialogView):
         except RefusedError as error:
             self._is_refused = True
             self._show_messages([self._refusal(message, error)])
+            self._shows_answer = True
+
+    def show_message(self, message: str) -> None:
+        """Show `message` above the dialog's buttons, e.g. "Saved" after Apply: not an error.
+
+        It doesn't keep the dialog open, nor stop OK. The next click, a check running again,
+        or the next opening takes it away.
+        """
+        self.log_view.log_message = message
+        self.log_view.log_type = LogType.INFO
+        self.log_view.is_visible = message != ""
+        self._shows_answer = True
 
     def check(self) -> None:
         """Run every check of the dialog now."""
@@ -5908,7 +5926,7 @@ class OkCancelDialogView(DialogView):
         """
         if not self.is_visible:
             return
-        self._forget_refusal()
+        self._forget_answer()
         self.check()
         if not self.can_accept:
             return
@@ -5924,7 +5942,7 @@ class OkCancelDialogView(DialogView):
         """
         if not self.is_visible:
             return
-        self._forget_refusal()
+        self._forget_answer()
         if button.checks:
             self.check()
             if not self.is_valid:
@@ -5934,14 +5952,14 @@ class OkCancelDialogView(DialogView):
             self.is_visible = False
 
     def open(self) -> None:
-        """Show the dialog, without the refusal of an earlier answer."""
-        self._forget_refusal()
+        """Show the dialog, without the message of an earlier answer."""
+        self._forget_answer()
         super().open()
 
-    def _forget_refusal(self) -> None:
+    def _forget_answer(self) -> None:
         # a new answer, or a new opening: the message of the checks, as they last ran
-        if self._is_refused:
-            self._is_refused = False
+        self._is_refused = False
+        if self._shows_answer:
             self.validate()
 
     def _show_messages(self, messages: list[str]) -> None:

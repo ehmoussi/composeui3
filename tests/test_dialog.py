@@ -14,6 +14,7 @@ from composeui.core.view import (
     DialogKind,
     DialogView,
     FormDialogView,
+    LogType,
     child,
     define_view,
 )
@@ -164,14 +165,32 @@ def test_a_refusal_in_the_answer_s_work_keeps_the_dialog_open_and_says_why(answe
     assert is_open == ([True, True] if answer == "save" else [])
 
 
-def test_a_refusal_shown_goes_once_the_dialog_opens_again() -> None:
+@pytest.mark.parametrize("answer", ["refusal", "information"])
+@pytest.mark.parametrize("next_step", ["click", "check", "opening"])
+def test_an_answer_s_message_shows_until_the_next_click_check_or_opening(
+    answer: str, next_step: str
+) -> None:
     dialog = SettingsDialog()
-    dialog.accepting.connect(functools.partial(_refuse, dialog, is_refused=[True]))
+    if answer == "refusal":
+        dialog.apply.clicked.connect(functools.partial(_refuse, dialog, is_refused=[True]))
+    else:
+        dialog.apply.clicked.connect(lambda: dialog.show_message("Saved."))
     dialog.open()
-    dialog.accept()
-    dialog.reject()
+    dialog.apply.click()
+    assert dialog.is_visible
+    assert dialog.log_view.is_visible
+    is_refusal = answer == "refusal"
+    assert dialog.log_view.log_type is (LogType.ERROR if is_refusal else LogType.INFO)
+    assert dialog.can_accept  # neither is a check: OK and Apply can be pressed
+    assert not dialog.apply.is_blocked
 
-    dialog.open()
+    if next_step == "click":
+        dialog.discard.click()  # shows nothing of its own
+    elif next_step == "check":
+        dialog.content.folder.text_changed.emit("results")
+    else:
+        dialog.reject()
+        dialog.open()
 
     assert not dialog.log_view.is_visible
 

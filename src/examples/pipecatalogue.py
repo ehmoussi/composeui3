@@ -477,7 +477,7 @@ class EditPipeDialog(TypedFormDialogView[PipeFormView]):
 
     Both wait for the form's checks, and for the dialog's own: another pipe has the name.
     When the database refuses the pipe, e.g. a wall thicker than the radius, the dialog says
-    why and stays open.
+    why and stays open. Apply says it saved the pipe in the dialog too.
     """
 
     form: PipeFormView = Factory(PipeFormView)
@@ -534,7 +534,7 @@ class PipeCatalogueMainView(MainView):
         self.confirm_remove.accepted.connect(self._remove_shown)
         # saved while the dialog is open: a pipe the database refuses keeps it open
         self.edit_dialog.accepting.connect(self._save_edited_pipe)
-        self.edit_dialog.apply.clicked.connect(self._save_edited_pipe)
+        self.edit_dialog.apply.clicked.connect(self._apply_edited_pipe)
         # only once closed: behind the open dialog, the status bar is out of sight
         self.edit_dialog.accepted.connect(self._say_saved)
         shown = self.catalogue.shown
@@ -573,11 +573,21 @@ class PipeCatalogueMainView(MainView):
         self.edit_dialog.edit(name)
 
     def _save_edited_pipe(self, *, model: PipeCatalogueModel) -> None:
+        self._is_edited_pipe_saved(model)
+
+    def _apply_edited_pipe(self, *, model: PipeCatalogueModel) -> None:
+        # the dialog stays open: it says so itself
+        if self._is_edited_pipe_saved(model):
+            self.edit_dialog.show_message(f"Saved {self.edit_dialog.edited_name!r}")
+
+    def _is_edited_pipe_saved(self, model: PipeCatalogueModel) -> bool:
         """Save the dialog's pipe; the dialog shows why the database refuses it, if it does."""
         pipe = self.edit_dialog.form.pipe()
         with self.edit_dialog.refusing("Can't save the pipe: {error}."):
             model.pipes.update(self.edit_dialog.edited_name, pipe)
             self.edit_dialog.saved_as(pipe.name)
+            return True
+        return False
 
     def _say_saved(self) -> None:
         self.status_bar.show_message(f"Saved {self.edit_dialog.edited_name!r}")
