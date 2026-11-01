@@ -13,7 +13,7 @@ from textual_fspicker.parts import DirectoryNavigation
 from textual_fspicker.path_filters import Filter, Filters
 
 from composeui.core.signal import Signal, SignalNoArgs
-from composeui.core.view import with_extension
+from composeui.core.view import path_of_text, text_of_path, with_extension
 from composeui.textualcore.widgets.composeinput import ComposeInput
 
 if TYPE_CHECKING:
@@ -157,8 +157,8 @@ class ComposeFilePathInput(Horizontal):
 
     The picker is textual-fspicker's, a screen of its own, opening in the directory of
     the field's path, if any, else in `start_folder`; `path_picked` reports the file
-    picked, once the field shows it. The reload button only reports its presses, and shows
-    with `has_reload`.
+    picked, once the field shows it, relative to `base_folder` when inside it. The reload
+    button only reports its presses, and shows with `has_reload`.
     """
 
     DEFAULT_CSS = """
@@ -192,8 +192,10 @@ class ComposeFilePathInput(Horizontal):
         self.extensions: dict[str, tuple[str, ...]] = {}
         #: the picker's title, the view's `browse_text`
         self.picker_title = ""
-        #: where the picker opens while the field is empty, the view's first server root
+        #: where the picker opens while the field is empty (see `PathInputMixin.start_folder`)
         self.start_folder: Path | None = None
+        #: the folder of a relative path in the field, the view's `base_folder`
+        self.base_folder: Path | None = None
         #: for a file to save: whether to ask before replacing one, and the question's texts
         self.confirms_overwrite = True
         self.replace_question = "{name}"
@@ -205,7 +207,9 @@ class ComposeFilePathInput(Horizontal):
     def open_picker(self) -> None:
         """Show the picker in the directory of the field's path, else `start_folder`."""
         picker: FileOpen | SelectDirectory | FileSave
-        text, title, start = self.input.value, self.picker_title, self.start_folder
+        text, title, start = self.input.value.strip(), self.picker_title, self.start_folder
+        if text != "":
+            text = str(path_of_text(text, self.base_folder))
         if self.kind == "folder":
             picker = folder_picker(text, title, start)
         elif self.kind == "save":
@@ -239,6 +243,6 @@ class ComposeFilePathInput(Horizontal):
 
     def _take(self, path: Path | None) -> None:
         if path is not None:
-            self.input.value = str(path)
+            self.input.value = text_of_path(path, self.base_folder)
             self.path_picked.emit(path)
         self.input.focus()

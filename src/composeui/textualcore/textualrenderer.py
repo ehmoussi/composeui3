@@ -937,8 +937,11 @@ _SERVER_LIST_TEXTS = (
 
 class PathInputViewLike(InputViewLike, Protocol):
     server_roots: tuple[Path, ...]
+    base_folder: Path | None
     browse_text: str
     path_picked: Signal[Path]
+
+    def path_text(self, path: Path) -> str: ...
 
 
 class FilePathInputViewLike(PathInputViewLike, Protocol):
@@ -949,6 +952,11 @@ class FilePathInputViewLike(PathInputViewLike, Protocol):
 
 
 TPathView = TypeVar("TPathView", bound=PathInputViewLike)
+
+
+def _start_folder(base_folder: Path | None, roots: tuple[Path, ...]) -> Path | None:
+    """Get where a picker opens while its field is empty (see `PathInputMixin.start_folder`)."""
+    return base_folder.expanduser() if base_folder is not None else (roots[0] if roots else None)
 
 
 class _TextualPathInputRenderer(TextualWidgetRenderer[TPathView, ComposeFilePathInput]):
@@ -966,6 +974,7 @@ class _TextualPathInputRenderer(TextualWidgetRenderer[TPathView, ComposeFilePath
                 "placeholder": self._refresh_placeholder,
                 "browse_text": self._refresh_browse_text,
                 "server_roots": self._refresh_server_roots,
+                "base_folder": self._refresh_base_folder,
                 # the web's list of the server's files only
                 **dict.fromkeys(_SERVER_LIST_TEXTS, lambda _view, _widget, _value: None),
             }
@@ -995,11 +1004,19 @@ class _TextualPathInputRenderer(TextualWidgetRenderer[TPathView, ComposeFilePath
         rendered_object.browse_button.tooltip = Content(value)
         rendered_object.picker_title = value
 
+    # each called before the view holds `value`: its `start_folder` would read the old one
     @staticmethod
     def _refresh_server_roots(
-        _view: TPathView, rendered_object: ComposeFilePathInput, value: tuple[Path, ...]
+        view: TPathView, rendered_object: ComposeFilePathInput, value: tuple[Path, ...]
     ) -> None:
-        rendered_object.start_folder = value[0] if value else None
+        rendered_object.start_folder = _start_folder(view.base_folder, value)
+
+    @staticmethod
+    def _refresh_base_folder(
+        view: TPathView, rendered_object: ComposeFilePathInput, value: Path | None
+    ) -> None:
+        rendered_object.base_folder = value
+        rendered_object.start_folder = _start_folder(value, view.server_roots)
 
     def _update_text(self, text: str) -> None:
         with self.stop_refresh():
@@ -1010,7 +1027,7 @@ class _TextualPathInputRenderer(TextualWidgetRenderer[TPathView, ComposeFilePath
     def _pick(self, path: Path) -> None:
         # the field's change arrives later, as a message: the view has the path first
         with self.stop_refresh():
-            self._view.text = str(path)
+            self._view.text = self._view.path_text(path)
         self._view.path_picked.emit(path)
 
 

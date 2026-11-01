@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import datetime
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 import pytest
 from attrs import Factory
@@ -12,6 +12,7 @@ from composeui.core.application import Application
 from composeui.core.model import RefusedError
 from composeui.core.view import (
     ConsoleView,
+    FilePathInputView,
     FormView,
     GroupFormView,
     LabelView,
@@ -35,9 +36,6 @@ from tests.console import RunMainView
 from tests.pages import InputsPage
 from tests.splitter import StudySplitter
 from tests.tabs import PipeTabs
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 
 def _note(_instance: object, _attribute: object, value: str) -> str:
@@ -286,3 +284,27 @@ def test_a_console_saves_its_text_and_says_how_it_went(tmp_path: Path) -> None:
 
     with pytest.raises(OSError):  # noqa: PT011 (whichever the system raises)
         ConsoleView().export_text(tmp_path)  # outside a main view
+
+
+def test_a_path_field_reads_a_relative_path_from_its_base_folder_and_shows_one_inside_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    study, elsewhere = tmp_path / "study", tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)  # the process started in another folder
+    field = FilePathInputView(base_folder=study, text="inputs/model.med")
+
+    assert (field.path, field.start_folder()) == (study / "inputs" / "model.med", study)
+    field.text = str(elsewhere / "model.med")
+    assert field.path == elsewhere / "model.med"
+    # picked: inside the base folder relative to it, else whole
+    inside = study / "inputs" / "model.med"
+    assert field.path_text(inside) == str(Path("inputs", "model.med"))
+    assert field.path_text(elsewhere / "model.med") == str(elsewhere / "model.med")
+    # a relative base folder, from the working folder: inside once both are resolved
+    field.base_folder = Path("..", "study")
+    assert field.path_text(inside) == str(Path("inputs", "model.med"))
+    # changed: the text stays, read from the new folder
+    field.text = "inputs/model.med"
+    field.base_folder = elsewhere
+    assert (field.text, field.path) == ("inputs/model.med", elsewhere / "inputs" / "model.med")

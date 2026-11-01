@@ -1600,27 +1600,59 @@ def is_within_roots(path: Path, roots: Iterable[Path]) -> bool:
     return any(resolved == root or root in resolved.parents for root in resolved_roots)
 
 
+def path_of_text(text: str, base_folder: Optional[Path]) -> Path:
+    """Get the path `text` names: a relative one from `base_folder`, ``~`` expanded, if any."""
+    path = Path(text)
+    if base_folder is None:
+        return path
+    path = path.expanduser()
+    return path if path.is_absolute() else base_folder.expanduser() / path
+
+
+def text_of_path(path: Path, base_folder: Optional[Path]) -> str:
+    """Get the text naming `path`: relative to `base_folder` when inside it, else as is.
+
+    Inside it as written, or once both are resolved: a dialog may give the path with the
+    links of `base_folder` followed.
+    """
+    if base_folder is None:
+        return str(path)
+    base = base_folder.expanduser()
+    for folder, inside in ((base, path), (base.resolve(), path.resolve())):
+        if inside == folder or folder in inside.parents:
+            return str(inside.relative_to(folder))
+    return str(path)
+
+
 @define_view
 class PathInputMixin(InputMixin):
     """A path typed in the field or picked with the "…" button beside it.
 
     What `FilePathInputMixin` and `FolderPathInputMixin` share: `text` holds the path as
     typed, and `path` reads it as a path. With `server_roots`, the web's button lists the
-    server's folders in them, and the field holds the path picked there.
+    server's folders in them, and the field holds the path picked there. With
+    `base_folder`, a relative text names a path in that folder, and a path picked in it
+    shows relative to it.
     """
 
     #: the folders of the server that the web's "…" lists, and nothing outside them. On
     #: Qt and Textual, the dialog opens in the first one while the field is empty, and the
     #: user can leave it.
     server_roots: tuple[Path, ...] = attrs.field(default=(), metadata={OMIT: True})
+    #: the folder of a relative path, e.g. a study's, rather than the process's working
+    #: folder: `path` and the check of `server_roots` read the text from it, and the
+    #: dialog opens in it while the field is empty. Changed, the text stays, and `path`
+    #: reads it from the new folder.
+    base_folder: Optional[Path] = attrs.field(default=None, metadata={OMIT: True})
     #: the texts of the web's list of the server's files in `server_roots`
     parent_folder_text: str = attrs.field(default=T("Parent folder"), metadata={UI_TEXT: True})
     cancel_text: str = attrs.field(default=T("Cancel"), metadata={UI_TEXT: True})
     unreadable_folder_text: str = attrs.field(
         default=T("This folder can't be read."), metadata={UI_TEXT: True}
     )
-    #: the user picked a path with the "…" button, now in the field; a typed path is
-    #: reported as any text is (`text_edited`, `editing_finished`)
+    #: the user picked a path with the "…" button, now in the field (relative to
+    #: `base_folder` when inside it, but emitted whole); a typed path is reported as any
+    #: text is (`text_edited`, `editing_finished`)
     path_picked: Signal[Path] = attrs.Factory(Signal[Path])
     #: whether `path` keeps to `server_roots`: set by the web, which lists only their files
     _keeps_to_roots: bool = attrs.field(
@@ -1629,15 +1661,15 @@ class PathInputMixin(InputMixin):
 
     @property
     def path(self) -> Optional[Path]:
-        """Get the path the field holds, None while it's empty.
+        """Get the path the field holds, from `base_folder` if relative; None while empty.
 
         On the web, with `server_roots`, None too for a path typed outside them, symbolic
-        links followed: the user can type any path of the server.
+        links and ``..`` followed: the user can type any path of the server.
         """
         text = self.text.strip()
         if text == "":
             return None
-        path = Path(text)
+        path = path_of_text(text, self.base_folder)
         if (
             self._keeps_to_roots
             and self.server_roots
@@ -1645,6 +1677,19 @@ class PathInputMixin(InputMixin):
         ):
             return None
         return path
+
+    def path_text(self, path: Path) -> str:
+        """Get the text the field shows for `path`: relative to `base_folder` when inside it."""
+        return text_of_path(path, self.base_folder)
+
+    def start_folder(self) -> Optional[Path]:
+        """Get the folder a dialog opens in while the field is empty, if any.
+
+        `base_folder`, else the first of `server_roots`.
+        """
+        if self.base_folder is not None:
+            return self.base_folder.expanduser()
+        return self.server_roots[0] if self.server_roots else None
 
 
 @define_view

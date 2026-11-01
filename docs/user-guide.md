@@ -44,6 +44,7 @@ not in the package: run them from a clone of the repository (see
   - [Date input](user-guide/widgets.md#date-input)
   - [File path input](user-guide/widgets.md#file-path-input)
     - [Files on the server](user-guide/widgets.md#files-on-the-server)
+    - [Relative paths](user-guide/widgets.md#relative-paths)
   - [Folder path input](user-guide/widgets.md#folder-path-input)
   - [Save path input](user-guide/widgets.md#save-path-input)
   - [Slider](user-guide/widgets.md#slider)

@@ -94,6 +94,9 @@ the option for the web (extra `web`, the default).
   outside them. A `FolderPathInputView` takes a folder, and a `SavePathInputView` a file to
   save, the same way; on the web, without `server_roots`, their path is typed. Give only folders that every user of the app may see.
   See https://ehmoussi.github.io/composeui/user-guide/widgets.html#files-on-the-server
+- **Read a relative path from the study's folder with `base_folder`**, not the process's
+  working folder: `path` reads the text from it, and a path picked inside it stays relative.
+  See https://ehmoussi.github.io/composeui/user-guide/widgets.html#relative-paths
 - **Keep the state saveable.** `MainView.save_state` writes the views' fields with
   `cattrs`, which handles `datetime.date` and `datetime.datetime` as ISO 8601 text. A new
   field must be serializable, or carry the `OMIT` metadata. Text that the code sets, not

@@ -1344,6 +1344,43 @@ def test_a_file_path_with_server_roots_keeps_to_them_whatever_the_page_sends(
         assert study.path == path, typed
 
 
+def test_a_file_path_s_base_folder_reads_its_relative_text_and_opens_its_server_list(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, elsewhere = tmp_path / "studies", tmp_path / "elsewhere"
+    (root / "beam" / "inputs").mkdir(parents=True)
+    (root / "beam" / "inputs" / "beam.export").write_text("")
+    (root / "beam" / "beam.export").write_text("")
+    (tmp_path / "secret.export").write_text("")
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)  # the process started in another folder
+    main_view = StudyFileMainView()
+    main_view.study.base_folder = root / "beam"
+    field = _server_files(main_view, root)
+    study = main_view.study
+    picked: list[Path] = []
+    study.path_picked.connect(picked.append)
+
+    # typed: from the base folder, and kept to the roots, `..` followed
+    for typed, path in [
+        ("inputs/beam.export", root / "beam" / "inputs" / "beam.export"),
+        ("../../secret.export", None),
+    ]:
+        handle_event(field, "change", {"value": typed})
+        assert study.path == path, typed
+    # the field empty: the list opens in the base folder
+    handle_event(field, "change", {"value": ""})
+    body = handle_event(field, "browse", {})
+    assert _listed(body, field)[1:] == [("browse-folder", "inputs"), ("browse-file", "beam.export")]
+    handle_event(field, "browse-folder", {"name": "inputs"})
+
+    handle_event(field, "browse-file", {"name": "beam.export"})
+
+    shown = root.resolve() / "beam" / "inputs" / "beam.export"
+    assert (study.text, picked) == (str(Path("inputs", "beam.export")), [shown])
+    assert study.path == root / "beam" / "inputs" / "beam.export"
+
+
 def test_a_file_path_with_several_server_roots_lists_them_first(tmp_path: Path) -> None:
     first, second = tmp_path / "first", tmp_path / "second"
     (first / "beam").mkdir(parents=True)

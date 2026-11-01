@@ -16,6 +16,7 @@ import json
 import math
 import sys
 import threading
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -175,7 +176,6 @@ from tests.workers import WorkersMainView
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Mapping
-    from pathlib import Path
 
     from pytestqt.qtbot import QtBot
 
@@ -963,6 +963,38 @@ def test_a_file_path_s_dialog_opens_in_its_first_server_root_and_can_leave_it(
     assert asked == [str(tmp_path / "studies")]
     # the app's own machine: a file outside the roots is the field's path too
     assert view.study.path == tmp_path / "elsewhere.py"
+
+
+def test_a_file_path_s_dialog_opens_in_its_base_folder_and_shows_its_files_relative(
+    qtbot: QtBot, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    study = tmp_path / "study"
+    view = StudyFileMainView()
+    view.render(RendererType.QT)
+    view.study.base_folder = study
+    field = _field_widget(view.study)
+    assert isinstance(field, QFilePathField)
+    qtbot.addWidget(field)
+    picked: list[Path] = []
+    view.study.path_picked.connect(picked.append)
+    asked: list[str] = []
+    answers = [str(study / "inputs" / "model.py"), str(tmp_path / "elsewhere.py")]
+
+    def ask(*args: object) -> tuple[str, str]:
+        asked.append(str(args[2]))
+        return answers.pop(0), ""
+
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", staticmethod(ask))
+
+    qtbot.mouseClick(field.browse_button, Qt.MouseButton.LeftButton)
+    assert field.line_edit.text() == str(Path("inputs", "model.py"))
+    assert view.study.path == study / "inputs" / "model.py"
+    # again: in the folder of the file picked, one outside the base folder shown whole
+    qtbot.mouseClick(field.browse_button, Qt.MouseButton.LeftButton)
+
+    assert asked == [str(study), str(study / "inputs")]
+    assert field.line_edit.text() == str(tmp_path / "elsewhere.py")
+    assert picked == [study / "inputs" / "model.py", tmp_path / "elsewhere.py"]
 
 
 def test_a_folder_path_is_picked_in_qt_s_folder_dialog_from_its_folder_else_its_root(
