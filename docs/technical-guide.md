@@ -432,6 +432,11 @@ Every behavior change needs a test in `tests/`.
 - `make test` runs the tests in parallel, a worker per CPU (pytest-xdist). So a test must
   not depend on the state or the order of another. `pytest` without `-n` runs them one
   after another.
+- A test that reads what a worker thread or a job does waits for that work, not for a fixed
+  number of pauses. After a Textual file action (Open, Save, Save As, `PickFileAction`),
+  call `await app.workers.wait_for_complete()`. For a job, call `main_view.jobs.wait()`. On
+  Qt, use `qtbot.waitUntil(...)`. A fixed wait passes on a fast machine and fails on a slow
+  CI runner, such as Windows with Python 3.9.
 - Qt tests in a headless environment (CI, WSL) need `QT_QPA_PLATFORM=offscreen`.
   `make test` sets it. To run one file or test:
 

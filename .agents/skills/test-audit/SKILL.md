@@ -51,6 +51,32 @@ failed proves the mock, not the fix. One regression at the owner boundary
 covers the bug; do not replay the same scenario in every backend unless each
 backend has its own renderer code path for it.
 
+## Waiting for work on another thread
+
+A test that reads what another thread does must wait for that thread, not for
+time. A fixed wait (a count of `pilot.pause()` calls, one `pilot.pause(0.05)`,
+or a `qtbot.wait(ms)`) passes on a fast machine and fails on a slow CI runner
+(Windows with Python 3.9 is the slowest), as
+`test_save_file_action_saves_under_the_extension_the_name_lacks` did. Wait on
+the work itself:
+
+- **Textual's file actions** (Open, Save, Save As, `PickFileAction`) run on a
+  worker thread (`_ComposeUIApp.trigger`). After the picker closes, call
+  `await app.workers.wait_for_complete()`, then one `await pilot.pause()` for
+  what the worker hands back to the app's thread (`call_from_thread`).
+- **Jobs** (`Task`, `MainView.jobs`): call `main_view.jobs.wait()` before reading
+  their results.
+- **Qt:** use `qtbot.waitUntil(...)` or `qtbot.waitSignal(...)` on the state or
+  signal that the work ends with.
+- **Without such a hook,** pause in a bounded loop until the state the test reads
+  arrives, then assert it: `for _ in range(100): await pilot.pause(0.05)`, with a
+  `break` once it is there, as the Textual tests of a sorting job do.
+
+A fixed pause is fine only for work on the app's own thread, such as a screen
+pushed. Even there, a slow runner can need more pauses than a fast one: when a
+test fails on CI only, use a bounded loop. When a test reads a file, a model, or
+a view that an action changes, find out first which thread the action runs on.
+
 ## Browser tests (Playwright)
 
 `tests/test_browser.py` serves the web app over uvicorn and drives it in headless
@@ -120,6 +146,9 @@ matches one, and audits hunt for existing tests that do.
 - mocks that implement the asserted behavior: a fake widget, a `MagicMock`
   renderer, or a patched `Signal.emit` standing in for the real toolkit path, or
   one identical mock standing in for different backends;
+- fixed pauses (`pilot.pause()` counts, `qtbot.wait(ms)`, `time.sleep`) before
+  reading what a worker thread or a job does: wait on the work instead (see
+  [Waiting for work on another thread](#waiting-for-work-on-another-thread));
 - fixtures that supply the event ordering the toolkit should produce, such as
   calling the view-side handler directly instead of typing into the widget, or
   state persistence asserted against a file `save_state` never writes;
@@ -239,15 +268,19 @@ rewrites), each passing validation on its own.
 2. For deleted tests, confirm the contract is still owned: run the remaining
    owner test, and temporarily break the production code to show it fails;
    revert the break before continuing.
-3. Run `make lint`, then `git diff --check`.
-4. Run `make mypy`, then the full `make test` (CI runs the same checks, but run them first).
+3. For a test that reads what a worker thread or a job does, slow that work
+   down: a temporary `time.sleep(0.5)` in the production code it runs, such as
+   `MainView.save_state`. The test must still pass; a test that waits on time
+   fails. Revert the delay before continuing.
+4. Run `make lint`, then `git diff --check`.
+5. Run `make mypy`, then the full `make test` (CI runs the same checks, but run them first).
    Compare coverage against the baseline run and explain any drop.
    When browser tests, `webcore/static/page.js` or the markup they rely on changed, also
    run `make browser-test` (once: `uv run --group browser playwright install
    chromium`) and check they passed rather than skipped; `make test` excludes them.
-5. Inspect `git diff --numstat`; report production/examples separately from
+6. Inspect `git diff --numstat`; report production/examples separately from
    tests and test support.
-6. After final audit edits, run the `code-review` skill on the diff.
+7. After final audit edits, run the `code-review` skill on the diff.
 
 ## Landing and continuation
 
