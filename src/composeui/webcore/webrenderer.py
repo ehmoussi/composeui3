@@ -1200,6 +1200,8 @@ class SavePathInputViewLike(PathInputViewLike, Protocol):
     replace_question_text: str
     replace_text: str
 
+    def remember_pick(self, path: Path) -> None: ...
+
 
 TPathView = TypeVar("TPathView", bound=PathInputViewLike)
 
@@ -1474,7 +1476,8 @@ class WebSavePathInputRenderer(_WebPathInputRenderer[SavePathInputViewLike]):
     The browser can't hand a page a path: without `server_roots`, the path is typed, and
     the field has no button. With them, the button opens the list of the server's folders
     and their files of `extensions`, whose "Save" puts the folder shown, with the name
-    typed, in the field, once the user agrees to replace a file that exists.
+    typed, in the field, once the user agrees to replace a file that exists, which the
+    view remembers (`remember_pick`).
     """
 
     _role = "save_path_input"
@@ -1499,6 +1502,11 @@ class WebSavePathInputRenderer(_WebPathInputRenderer[SavePathInputViewLike]):
     def _save_texts(self) -> tuple[str, str, str, str]:
         view = self._view
         return (view.file_name_text, view.save_text, view.replace_question_text, view.replace_text)
+
+    def _show_path(self, path: Path) -> None:
+        # the list asked about a file that exists, unless `confirms_overwrite` is off
+        self._view.remember_pick(path)
+        super()._show_path(path)
 
 
 class WebFolderPathInputRenderer(_WebPathInputRenderer[FolderPathInputViewLike]):

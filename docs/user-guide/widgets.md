@@ -299,7 +299,9 @@ class ReportForm(FormView):
 - `path_picked` emits the path that the user picks with the "…" button. A typed path comes
   through the signals of any text field: `text_edited` and `editing_finished`.
 - With `confirms_overwrite` (on by default), the user agrees to replace a file that exists
-  before it is picked.
+  before it is picked. `is_replace_agreed` remembers it. A path typed in the field isn't
+  asked about: write the file with the main view's
+  [`write_file`](organizing-the-window.md#replacing-a-file), which asks when the user saves.
 - `browse_text` ("Save as"), `file_name_text`, `save_text`, `replace_question_text` and
   `replace_text` name the button and the texts of the dialog. The catalogs translate them.
 

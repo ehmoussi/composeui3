@@ -4385,6 +4385,7 @@ async def test_a_save_path_is_picked_in_a_save_picker_and_replaces_a_file_once_a
         await pilot.pause()
         await save(tmp_path / "summary")  # a new file: at once, its extension added
         assert picked == [tmp_path / "summary.pdf"]
+        assert not report.is_replace_agreed  # nothing to replace
         question = await save(tmp_path / "report")
         assert isinstance(question, ReplaceFileScreen)
         assert str(question.question.render()) == "report.pdf already exists. Replace it?"
@@ -4397,8 +4398,10 @@ async def test_a_save_path_is_picked_in_a_save_picker_and_replaces_a_file_once_a
         await _click_laid_out(pilot, question.replace_button)
         await pilot.pause()
         assert picked[-1] == tmp_path / "report.pdf"
+        assert report.is_replace_agreed  # remembered: saving won't ask again
         report.confirms_overwrite = False
-        await save(tmp_path / "report")  # no question
+        await save(tmp_path / "report")  # no question, so nothing agreed
+        assert not report.is_replace_agreed
 
     assert Path(location) == tmp_path
     assert picked == [tmp_path / "summary.pdf", tmp_path / "report.pdf", tmp_path / "report.pdf"]

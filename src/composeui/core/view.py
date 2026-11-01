@@ -823,6 +823,60 @@ class DialogView(View):
 
 
 @define_view
+class ReplaceFileDialogView(DialogView):
+    """A question before saving over a file that exists, e.g. a path typed: Replace or Cancel.
+
+    The main view's own, which `MainView.write_file` asks. `save` writes at once a file
+    that doesn't exist yet, else once the user agrees to replace it. The app's own function
+    writes: the dialog only decides when. Cancel writes nothing, and the file stays as it is.
+    """
+
+    kind: DialogKind = attrs.field(default=DialogKind.CONFIRM)
+    accept_text: str = attrs.field(default=T("Replace"), metadata={UI_TEXT: True})
+    #: the file to write and the function writing it, while the user hasn't answered
+    _pending: Optional[tuple[Path, Callable[[Path], object]]] = attrs.field(
+        default=None, init=False, repr=False, eq=False, metadata={OMIT: True}
+    )
+
+    def __attrs_post_init__(self) -> None:
+        super().__attrs_post_init__()
+        self.accepted.connect(self._write)
+        self.rejected.connect(self._forget)
+
+    def save(
+        self,
+        path: Path,
+        write: Callable[[Path], object],
+        *,
+        is_agreed: bool = False,
+        question: str = T("{name} already exists. Replace it?"),
+    ) -> None:
+        """Call `write(path)` now if no file is at `path`, else once the user agrees to replace it.
+
+        With `is_agreed`, at once too: the user already agreed. `question` asks, its
+        ``{name}`` the file's. A new `save` before the answer replaces the file and the
+        function, and closes the question if it writes at once.
+        """
+        if is_agreed or not (path.exists() or path.is_symlink()):
+            self._pending = None
+            self.is_visible = False  # a question still open is about another file
+            write(path)
+            return
+        self._pending = (path, write)
+        self.text = translate_again(question, self._tr).format(name=path.name)
+        self.open()
+
+    def _write(self) -> None:
+        pending, self._pending = self._pending, None
+        if pending is not None:
+            path, write = pending
+            write(path)
+
+    def _forget(self) -> None:
+        self._pending = None
+
+
+@define_view
 class SeparatorAction(View):
     """A line between two groups of entries in a menu or a toolbar."""
 
@@ -1121,6 +1175,8 @@ class MainView(View):
     file_view: FileView = attrs.field(factory=FileView, metadata={OMIT: True})
     # message_view: MessageView = MessageView()
     status_bar: StatusBar = attrs.Factory(StatusBar)
+    #: the question before `write_file` replaces a file that exists
+    replace_file: ReplaceFileDialogView = attrs.Factory(ReplaceFileDialogView)
     #: emitted once the views and the model's data are in place: as the app starts, with the
     #: study of ``-f`` or a new one, and after New and Open (after `Model.loaded`). The app
     #: gives again then what a study doesn't hold, such as the source of a large table
@@ -1322,6 +1378,30 @@ class MainView(View):
         if isinstance(self.renderer, MainRenderer):
             self.file_view.filepath = self.renderer.open_file()
         return self.file_view.filepath
+
+    def write_file(
+        self, target: Union[SavePathInputMixin, Path], write: Callable[[Path], object]
+    ) -> None:
+        """Call `write(path)` to write a file, once the user agrees to replace one that exists.
+
+        `target` is a save path field, whose `path` it writes, or a path. Nothing happens
+        while the field is empty. A field asks with its own texts, and only once: not again
+        when the user already agreed in its picker (`SavePathInputMixin.is_replace_agreed`).
+        The app's `write` writes the file; Cancel writes nothing. Give `write` the data as
+        it is now, e.g. with `functools.partial`: the answer comes later.
+        """
+        dialog = self.replace_file
+        if isinstance(target, Path):
+            dialog.title, dialog.accept_text = "", self.tr("Replace")
+            dialog.save(target, write)
+            return
+        path = target.path
+        if path is None:
+            return
+        dialog.title, dialog.accept_text = target.browse_text, target.replace_text
+        dialog.save(
+            path, write, is_agreed=target.is_replace_agreed, question=target.replace_question_text
+        )
 
     def ask_save_filepath(self, extensions: dict[str, tuple[str, ...]]) -> Optional[Path]:
         self.file_view.extensions = extensions
@@ -1761,7 +1841,8 @@ class SavePathInputMixin(PathInputMixin):
     lists the server's folders in them and their files of `extensions`: a file's item
     takes its name, and "Save" picks the folder shown with the name typed. With
     `confirms_overwrite`, a file that exists is picked only once the user agrees to
-    replace it.
+    replace it, and `is_replace_agreed` remembers it, for `MainView.write_file` not to ask
+    again at save time.
     """
 
     #: the file types the dialog offers, by name: ``{"PDF": (".pdf",)}``; the first one is
@@ -1785,6 +1866,10 @@ class SavePathInputMixin(PathInputMixin):
         default=T("{name} already exists. Replace it?"), metadata={UI_TEXT: True}
     )
     replace_text: str = attrs.field(default=T("Replace"), metadata={UI_TEXT: True})
+    #: the file that exists which the user agreed to replace in the picker, if any
+    _agreed_path: Optional[Path] = attrs.field(
+        default=None, init=False, repr=False, eq=False, metadata={OMIT: True}
+    )
 
     @property
     def path(self) -> Optional[Path]:
@@ -1794,6 +1879,22 @@ class SavePathInputMixin(PathInputMixin):
         """
         path = super().path
         return None if path is None else with_extension(path, self.extensions)
+
+    @property
+    def is_replace_agreed(self) -> bool:
+        """Tell whether the user agreed in the picker to replace the file `path` names.
+
+        False once the field holds another path, e.g. typed since.
+        """
+        path, agreed = self.path, self._agreed_path
+        return path is not None and agreed is not None and path.resolve() == agreed.resolve()
+
+    def remember_pick(self, path: Path) -> None:
+        """Remember the path picked in the picker: a file that exists, the user agreed to replace.
+
+        The renderers call it as the picker picks `path`, before the field shows it.
+        """
+        self._agreed_path = path if self.confirms_overwrite and path.exists() else None
 
 
 @define_view

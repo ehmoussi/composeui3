@@ -1064,6 +1064,7 @@ def test_a_save_path_is_picked_in_qt_s_save_dialog_its_extension_added(
     saved[0] = str(tmp_path / "summary")
     qtbot.mouseClick(field.browse_button, Qt.MouseButton.LeftButton)
     assert (report.path, picked) == (tmp_path / "summary.pdf", [tmp_path / "summary.pdf"])
+    assert not report.is_replace_agreed  # a new file: nothing to replace
     # Qt asked about "report": the extension names a file it didn't ask about
     saved[0] = str(tmp_path / "report")
     qtbot.mouseClick(field.browse_button, Qt.MouseButton.LeftButton)
@@ -1073,11 +1074,13 @@ def test_a_save_path_is_picked_in_qt_s_save_dialog_its_extension_added(
     replaced[0] = QMessageBox.StandardButton.Yes
     qtbot.mouseClick(field.browse_button, Qt.MouseButton.LeftButton)
     assert picked[-1] == tmp_path / "report.pdf"
-    # without the question: Qt's own is off too
+    assert report.is_replace_agreed  # remembered: saving won't ask again
+    # without the question: Qt's own is off too, and nothing was agreed
     report.confirms_overwrite = False
     qtbot.mouseClick(field.browse_button, Qt.MouseButton.LeftButton)
     assert asked[-1][2] == QFileDialog.Option.DontConfirmOverwrite
     assert len(questions) == 2
+    assert not report.is_replace_agreed
 
 
 def test_a_slider_stops_on_its_steps_its_value_painted_beside_the_track(qtbot: QtBot) -> None:
@@ -2214,7 +2217,7 @@ def _dialog_window(qtbot: QtBot) -> tuple[DialogsMainView, QMainWindow, QMessage
     assert isinstance(window, QMainWindow)
     qtbot.addWidget(window)
     window.show()
-    box = window.findChild(QMessageBox)
+    box = _qt_widget(view.confirm_clear)  # not the main view's own question
     assert isinstance(box, QMessageBox)
     return view, window, box
 

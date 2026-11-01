@@ -103,6 +103,11 @@ the option for the web (extra `web`, the default).
   widget follows the kind the user picks. Read a cell's path with
   `table.cell_widget(row, column).path(text)`.
   See https://ehmoussi.github.io/composeui/user-guide/tables.html#paths-by-the-rows-kind
+- **Write a file the user names with `main_view.write_file(field, write)`**: a path typed
+  in a save path field is never asked about by its picker. `write_file` asks before
+  replacing a file that exists, once per file, then calls `write(path)`. Bind the data when
+  the user saves: `functools.partial(write, data=...)`.
+  See https://ehmoussi.github.io/composeui/user-guide/organizing-the-window.html#replacing-a-file
 - **Keep the state saveable.** `MainView.save_state` writes the views' fields with
   `cattrs`, which handles `datetime.date` and `datetime.datetime` as ISO 8601 text. A new
   field must be serializable, or carry the `OMIT` metadata. Text that the code sets, not

@@ -1629,6 +1629,7 @@ def test_a_save_path_with_server_roots_is_picked_in_a_folder_with_the_name_typed
 
     assert picked == [beam / "report.pdf"]
     assert report.text == str(beam / "report.pdf")
+    assert report.is_replace_agreed  # remembered: saving won't ask again
     assert "hidden" in _element(body, f"{field.widget_id}-files").attributes
     # closed by the server: the "…" button takes the focus back
     assert "autofocus" in _element(body, f"{field.widget_id}-browse").attributes
@@ -1636,10 +1637,12 @@ def test_a_save_path_with_server_roots_is_picked_in_a_folder_with_the_name_typed
     assert _name_box(handle_event(field, "browse", {}), field).attributes["value"] == ("report.pdf")
     handle_event(field, "browse-save", {"name": "summary"})
     assert picked[-1] == beam / "summary.pdf"
+    assert not report.is_replace_agreed  # nothing to replace
     report.confirms_overwrite = False
     handle_event(field, "browse", {})
     handle_event(field, "browse-save", {"name": "report"})  # replaced without a question
     assert picked[-1] == beam / "report.pdf"
+    assert not report.is_replace_agreed  # so nothing agreed
 
 
 def test_a_save_path_is_typed_with_its_extension_inside_the_server_roots(tmp_path: Path) -> None:

@@ -6,10 +6,14 @@ says what the "…" button of its path picks: a file to read, a folder, or a fil
 which may not exist yet. Changing the kind changes the button. The paths are relative to
 the study's folder, whatever folder the app started in, and the line under the table shows
 where the selected row's path leads. On the web, the "…" button lists the study's folder.
+
+"Save summary" writes the table's rows to the text file of the field beside it. Over a file
+that exists, it asks first, unless the user already agreed in the field's "…" picker.
 """
 
 from __future__ import annotations
 
+import functools
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -17,9 +21,12 @@ from attrs import Factory
 
 from composeui.core.application import run
 from composeui.core.view import (
+    ButtonView,
     CellWidget,
+    HorizontalView,
     LabelView,
     MainView,
+    SavePathInputView,
     T,
     TableView,
     child,
@@ -55,6 +62,19 @@ def path_widget(study: Path) -> CellWidget:
 
 
 @define_view
+class SummaryRow(HorizontalView):
+    """Where to save the summary of the table, and the button saving it."""
+
+    file: SavePathInputView = child(SavePathInputView, extensions={"Text": (".txt",)})
+    save: ButtonView = child(ButtonView, text=T("Save summary"))
+
+
+def write_summary(path: Path, rows: list[list[str]]) -> None:
+    """Write `rows` to the text file `path`: a line per row, its cells separated by tabs."""
+    path.write_text("".join("\t".join(cells) + "\n" for cells in rows), encoding="utf-8")
+
+
+@define_view
 class StudyInputsMainView(MainView):
     app_title = T("Study Inputs")
     extension = ".studyinputs"
@@ -74,6 +94,7 @@ class StudyInputsMainView(MainView):
         },
     )
     resolved: LabelView = Factory(LabelView)
+    summary: SummaryRow = Factory(SummaryRow)
 
     def __attrs_post_init__(self) -> None:
         super().__attrs_post_init__()
@@ -81,6 +102,8 @@ class StudyInputsMainView(MainView):
         self.files.selection_changed.connect(self._show_resolved)
         self.files.cell_edited.connect(self._show_edited)
         self.resolved.text = self.tr("Select a row to see where its path leads.")
+        self.summary.file.placeholder = self.tr("summary.txt")
+        self.summary.save.clicked.connect(self.save_summary)
 
     @classmethod
     def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
@@ -95,7 +118,27 @@ class StudyInputsMainView(MainView):
     def show_study(self, study: Path) -> None:
         """Read the paths from the folder `study`, and list it on the web."""
         self.files.cell_widgets = {**self.files.cell_widgets, PATH: path_widget(study)}
+        self.summary.file.base_folder = study
+        self.summary.file.server_roots = (study,)
         self._show_resolved()
+
+    def save_summary(self) -> None:
+        """Write the rows shown now to the summary's file, asking first over a file that exists."""
+        if self.summary.file.path is None:
+            self.status_bar.show_message(self.tr("Type or pick where to save the summary."))
+            return
+        # the rows as the user sees them now: an answer that comes later writes these
+        rows = [list(cells) for cells in self.files.rows]
+        self.write_file(self.summary.file, functools.partial(self._write_summary, rows=rows))
+
+    def _write_summary(self, path: Path, rows: list[list[str]]) -> None:
+        try:
+            write_summary(path, rows)
+        except OSError as error:
+            message = self.tr("Can't save {name}: {error}")
+            self.status_bar.show_message(message.format(name=repr(path.name), error=error))
+            return
+        self.status_bar.show_message(self.tr("Saved {name}").format(name=path.name))
 
     def _show_edited(self, row: int, column: int, text: str) -> None:
         # emitted while `rows` holds the old text: the row as the edit leaves it
