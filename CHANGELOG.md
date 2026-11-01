@@ -20,6 +20,11 @@ The notable changes of each release of ComposeUI. The format follows
   another cell of the row: a file, a folder, or a file to save. When the user changes the
   kind, the widget follows. `TableMixin.cell_widget(row, column)` gets a cell's widget. The
   study inputs example (`studyinputs.py`) lists a study's files this way.
+- `MainView.write_file(field, write)`, which asks before the app saves over a file that
+  exists, such as a path typed in a save path field: it calls the app's `write` at once, or
+  only once the user agrees to replace the file. When the user already agreed in the field's
+  picker (`is_replace_agreed`), it doesn't ask again. The study inputs example saves a
+  summary of its table this way.
 
 ## [0.2.0] - 2026-10-30
 

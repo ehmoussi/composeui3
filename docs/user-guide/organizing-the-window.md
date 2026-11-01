@@ -518,3 +518,55 @@ class OpenStudyDialog(ContentDialogView[FolderView]):
 
 Each backend shows a content dialog as it shows a form dialog: Qt a `QDialog`, Textual a
 modal screen, and the web a modal `<dialog>`, with the view above the OK and Cancel buttons.
+
+### Replacing a file
+
+The save path input's "…" button asks before the user picks a file that exists. A path
+typed in the field never goes through the picker. When the user saves, write the file with
+the main view's `write_file`, which asks first:
+
+```python
+import functools
+from pathlib import Path
+
+from composeui.core.view import ButtonView, MainView, SavePathInputView, child, define_view
+
+
+def write_report(path: Path, text: str) -> None:
+    path.write_text(text, encoding="utf-8")
+
+
+@define_view
+class ReportMainView(MainView):
+    report: SavePathInputView = child(SavePathInputView, extensions={"Text": (".txt",)})
+    save: ButtonView = child(ButtonView, text="Save")
+
+    def __attrs_post_init__(self) -> None:
+        super().__attrs_post_init__()
+        self.save.clicked.connect(self.save_report)
+
+    def save_report(self) -> None:
+        text = "..."  # what the user sees now, e.g. built from the views
+        self.write_file(self.report, functools.partial(write_report, text=text))
+```
+
+- **`write_file(field, write)`** calls `write(path)` at once when no file is at the field's
+  path. Otherwise it asks "report.txt already exists. Replace it?", and calls `write` only on
+  Replace. Cancel, or Escape, writes nothing: the file stays as it is. While the field is
+  empty, nothing happens.
+- **One question per file.** When the user already agreed in the field's picker to replace
+  the file, `write_file` writes at once. The agreement is lost once the field holds another
+  path, for example typed since. `is_replace_agreed` tells whether the user agreed.
+- **The app writes the file.** `write_file` only decides when. The app chooses how, for
+  example through a temporary file that then replaces the old one.
+- **The data written is the data the user saw.** Give `write` the data as it is when the
+  user saves, as `functools.partial` does above. The answer comes later, and the views may
+  have changed by then.
+- **The texts** are the field's: `browse_text` as the title, `replace_question_text` and
+  `replace_text`. A path rather than a field, `write_file(path, write)`, asks with the
+  main view's texts, in its language.
+
+Each backend shows the question as any confirmation: Qt a `QMessageBox`, Textual a modal
+screen, and the web a modal `<dialog>`. In
+[`src/examples/studyinputs.py`](../../src/examples/studyinputs.py), "Save summary" writes the
+table's rows to the file of the field beside it.

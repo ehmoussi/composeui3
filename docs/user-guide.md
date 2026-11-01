@@ -69,6 +69,7 @@ not in the package: run them from a clone of the repository (see
   - [Dialogs](user-guide/organizing-the-window.md#dialogs)
     - [Form dialogs](user-guide/organizing-the-window.md#form-dialogs)
     - [Content dialogs](user-guide/organizing-the-window.md#content-dialogs)
+    - [Replacing a file](user-guide/organizing-the-window.md#replacing-a-file)
 - [Tables](user-guide/tables.md)
   - [A table of records](user-guide/tables.md#a-table-of-records)
     - [Sorting and filtering](user-guide/tables.md#sorting-and-filtering)

@@ -45,7 +45,7 @@ options, such as `--language` and `-f FILE`.
 | --- | --- | --- |
 | [`pipeform.py`](../src/examples/pipeform.py) | web | Forms, validation, pages, a menu, a confirm dialog, Markdown help, a French translation |
 | [`markdownviewer.py`](../src/examples/markdownviewer.py) | web | A Markdown view, a file path input, an option of the app's own, no File menu |
-| [`studyinputs.py`](../src/examples/studyinputs.py) | web | A table of a study's files: paths picked by each row's kind, relative to the study's folder |
+| [`studyinputs.py`](../src/examples/studyinputs.py) | web | A table of a study's files: paths picked by each row's kind, relative to the study's folder; a summary saved after asking before replacing a file |
 | [`taskview.py`](../src/examples/taskview.py) | web | Jobs in threads, metrics, a progress bar, a step chart, an expander, a button and a link in a table's cells, a French translation |
 | [`pipechart.py`](../src/examples/pipechart.py) | qt | Line and scatter charts, a reference line, tabs, a table, check boxes and comboboxes in a table's cells, colored, marked and disabled cells, cells spanning rows, a header group, row headers |
 | [`pipecatalogue.py`](../src/examples/pipecatalogue.py) | web | A SQLite model, a sidebar, a list of views, a tree, resizable panes, a form dialog, a date input |
@@ -181,6 +181,10 @@ It shows:
   folder, `--study`, whatever folder the app started in. The line under the table shows
   where the selected row's path leads (`cell_widget(row, column).path(text)`).
 - on the web, the "…" button lists the study's folder: its `server_roots`.
+- "Save summary" writes the table's rows to the text file of the
+  [save path input](user-guide/widgets.md#save-path-input) beside it. Over a file that
+  exists, [`write_file`](user-guide/organizing-the-window.md#replacing-a-file) asks first,
+  unless the user already agreed in the field's "…" picker.
 
 ## Task view
 

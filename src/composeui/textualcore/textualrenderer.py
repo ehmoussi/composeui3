@@ -1079,11 +1079,14 @@ class SavePathInputViewLike(PathInputViewLike, Protocol):
     replace_text: str
     cancel_text: str
 
+    def remember_pick(self, path: Path) -> None: ...
+
 
 class TextualSavePathInputRenderer(_TextualPathInputRenderer[SavePathInputViewLike]):
     """A field typing a path to save a file to, then a "…" button opening a save picker.
 
-    textual-fspicker's, asking before replacing a file (see `ComposeFilePathInput`).
+    textual-fspicker's, asking before replacing a file (see `ComposeFilePathInput`). The
+    view remembers a file the user agreed to replace (`remember_pick`).
     """
 
     _kind = "save"
@@ -1103,6 +1106,11 @@ class TextualSavePathInputRenderer(_TextualPathInputRenderer[SavePathInputViewLi
                 ),
             }
         )
+
+    def _pick(self, path: Path) -> None:
+        # the widget asked about a file that exists, unless `confirms_overwrite` is off
+        self._view.remember_pick(path)
+        super()._pick(path)
 
     @staticmethod
     def _refresh_widget(

@@ -351,3 +351,58 @@ def test_a_path_by_kind_cell_takes_its_row_s_kind_s_widget_and_base_folder(tmp_p
     assert translated.text == "Choisir un dossier"
     with pytest.raises(ValueError, match="with a COMBOBOX cell"):
         CellWidget.path_by(1, {"Notes": CellWidget.combobox()})
+
+
+def test_saving_the_summary_asks_before_replacing_a_file_unless_the_picker_did(
+    tmp_path: Path,
+) -> None:
+    view = StudyInputsMainView()
+    view.status_bar.timeout = 0
+    view.show_study(tmp_path)
+    field, dialog = view.summary.file, view.replace_file
+    summary = tmp_path / "summary.txt"
+
+    view.save_summary()  # nowhere yet
+    assert view.status_bar.message == "Type or pick where to save the summary."
+    written: list[Path] = []
+    view.write_file(field, written.append)
+    assert written == []  # nothing to write while empty
+    field.text = "summary"  # typed, from the study, its extension added
+    view.save_summary()  # a new file: at once
+    assert (summary.read_text().count("\n"), dialog.is_visible) == (4, False)
+    summary.write_text("kept")
+    view.save_summary()
+    # the field's own texts
+    question = (dialog.title, dialog.text, dialog.accept_text)
+    assert question == ("Save as", "summary.txt already exists. Replace it?", "Replace")
+    assert dialog.is_visible
+    dialog.reject()
+    assert summary.read_text() == "kept"
+    view.save_summary()
+    view.files.rows = view.files.rows[:1]  # changed while the user reads the question
+    dialog.accept()
+    assert summary.read_text().count("\n") == 4  # the rows of the click
+    # agreed in the picker: no question again, for that file only, and one still open closes
+    view.save_summary()
+    field.remember_pick(summary)
+    view.save_summary()
+    assert (summary.read_text().count("\n"), dialog.is_visible) == (1, False)
+    dialog.open()  # by the app itself: nothing to write once answered
+    dialog.accept()
+    assert summary.read_text().count("\n") == 1
+    field.text = "other.txt"
+    assert not field.is_replace_agreed
+    # a folder there: asked, then the write fails, which the status bar says
+    (tmp_path / "other.txt").mkdir()
+    view.save_summary()
+    dialog.accept()
+    assert view.status_bar.message.startswith("Can't save 'other.txt': ")
+    # a path rather than a field: asked too, in the main view's language
+    view.set_language("fr")
+    view.write_file(summary, written.append)
+    assert (dialog.text, dialog.accept_text) == (
+        "summary.txt existe déjà. Le remplacer ?",
+        "Remplacer",
+    )
+    dialog.accept()
+    assert written == [summary]

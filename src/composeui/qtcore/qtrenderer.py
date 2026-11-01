@@ -790,6 +790,8 @@ class SavePathInputViewLike(PathInputViewLike, Protocol):
     confirms_overwrite: bool
     replace_question_text: str
 
+    def remember_pick(self, path: Path) -> None: ...
+
 
 #: the texts of the web's list for saving, which Qt doesn't show
 _SAVE_LIST_TEXTS = ("file_name_text", "save_text", "replace_text")
@@ -800,7 +802,8 @@ class QtSavePathInputRenderer(_QtPathInputRenderer[SavePathInputViewLike]):
 
     The dialog opens on the field's path, if any, else in the view's `start_folder`, and
     asks before replacing a file, unless `confirms_overwrite` is off.
-    The path picked gets the first of `extensions` if it has none of them.
+    The path picked gets the first of `extensions` if it has none of them. The view
+    remembers a file the user agreed to replace (`remember_pick`).
     """
 
     def __init__(self, view: SavePathInputViewLike) -> None:
@@ -816,7 +819,7 @@ class QtSavePathInputRenderer(_QtPathInputRenderer[SavePathInputViewLike]):
     def ask(self, parent: QWidget) -> str:
         path = self._view.path
         start = path if path is not None else self._view.start_folder()
-        return _ask_save(
+        picked = _ask_save(
             parent,
             self._view.browse_text,
             start,
@@ -824,6 +827,10 @@ class QtSavePathInputRenderer(_QtPathInputRenderer[SavePathInputViewLike]):
             confirms_overwrite=self._view.confirms_overwrite,
             replace_question=self._view.replace_question_text,
         )
+        if picked != "":
+            # Qt asked about a file that exists, or `_ask_save` did
+            self._view.remember_pick(Path(picked))
+        return picked
 
 
 class QtFolderPathInputRenderer(_QtPathInputRenderer[PathInputViewLike]):
