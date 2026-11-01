@@ -1,6 +1,6 @@
 ---
 name: composeui
-description: "Use when writing or changing an app built with ComposeUI, the Python MVVM layer whose views are typed attrs classes that a Qt, Textual or web renderer shows: when the code imports composeui, defines a MainView, a FormView or another view with @define_view, connects a Signal, or starts an app with run(). Holds the rules that keep such an app correct on every backend, a minimal app, and where the documentation is."
+description: "Use when writing or changing an app built with ComposeUI, the Python MVVM layer whose views are typed attrs classes that a Qt, Textual or web renderer shows: when the code imports composeui, defines a MainView, a FormView or another view with @define_view, connects a Signal, or starts an app with run(); also when choosing widgets for a screen, or judging whether ComposeUI supports a feature. Holds the rules that keep such an app correct on every backend, a minimal app, and where the documentation is."
 metadata:
   composeui-version: "0.2"
 ---
@@ -74,6 +74,38 @@ if __name__ == "__main__":
 
 Run it with `--backend qt` (extra `pyside6`), `--backend textual` (extra `tui`), or without
 the option for the web (extra `web`, the default).
+
+## Find what ComposeUI already has
+
+Look before you design a screen, and before you tell the user that ComposeUI lacks a
+feature. An app often builds by hand what a view already does, such as a navigation that
+`Router` and `PageView` give.
+
+1. **Know the version.** Check the installed version, or the commit that the app pins (see
+   above). Answer for that version.
+2. **Search the public names.** The public API is the `__all__` of each `composeui.core`
+   module: `python -c "import composeui.core.view as m; print(m.__all__)"`. Read the
+   docstring and the signature of a candidate with `help(...)`. A name outside `__all__`
+   can change in any release.
+3. **Read the documentation of the need.** The widget catalog lists each view and its
+   backends, the user guide has a section per feature, and the examples guide has complete
+   apps. The site documents `main`: for an older release, trust the installed docstrings.
+4. **Try a minimal example** of the candidate on the backends that the app uses, before you
+   build around it or write a workaround. Run each code example before you answer with it.
+
+When you assess a need, say which case it is:
+
+- **Supported directly:** a view, a field, or a signal does it.
+- **Supported by composition:** existing views do it together, such as a `ListView` whose
+  rows are each a `HorizontalView` of labels and buttons.
+- **Needs a new widget:** a new view and a renderer on each backend, which is a change to
+  ComposeUI (https://ehmoussi.github.io/composeui/technical-guide.html#add-a-widget). Do not
+  draw it with a toolkit in the app: the app then runs on one backend only.
+- **Not in the checked version:** a newer release or `main` can have it. Read the changelog.
+
+Name the version or the commit that you checked, and say what you searched: "not found" is
+not "not available". Do not choose widgets from memory or from an older answer: read the
+catalog and the `__all__` of the version that you checked.
 
 ## Structure the app
 
@@ -213,8 +245,6 @@ See https://ehmoussi.github.io/composeui/user-guide/building-views.html#structur
   view that holds only it, then the whole app. Build two apps and check that they share no
   state.
   See https://ehmoussi.github.io/composeui/user-guide/testing.html
-- **Run a code example before you answer with it.** The API moves: check each name against
-  `composeui.core.view` or the widget catalog before you use it.
 
 ## Where to look
 
@@ -223,6 +253,8 @@ See https://ehmoussi.github.io/composeui/user-guide/building-views.html#structur
   https://ehmoussi.github.io/composeui/user-guide.html
 - Complete apps to copy from: the examples guide,
   https://ehmoussi.github.io/composeui/examples-guide.html
+- Public names: the `__all__` of each `composeui.core` module (see
+  "Find what ComposeUI already has")
 - Exact signatures: the API reference, https://ehmoussi.github.io/composeui/api/index.html
 - What changed in each release: the changelog,
   https://github.com/ehmoussi/composeui/blob/main/CHANGELOG.md
