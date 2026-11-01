@@ -93,6 +93,9 @@ app's state, one-command deployment, user identity, and sessions that survive a 
    records apart. A signed session cookie is not a user identity.
 6. **Measure before claiming speed.** Reactive updates are a design choice, not proof of speed.
    Compare equivalent workloads with other Python dashboard frameworks, with their caching on.
+7. **Presentation by role, not by style.** An app says what a text or a field is: a title, a
+   caption, a short field. Each backend maps the role to its own look. Do not add colors, fonts,
+   pixel sizes or CSS classes to the core views.
 
 The registry lets a backend leave out a renderer: the view then renders as `None`.
 `tests/test_renderer_registry.py` requires the same keys on the three backends, maps aside.
@@ -105,7 +108,7 @@ Change that contract, and its tests, explicitly for extensions.
 | M0 — Baseline | Compare future work with 0.1.0 | Benchmark the Uber examples; prototype reactive methods (N02) and helpers; specify capabilities and data ownership | Three reference apps are specified, measured, and used to review the proposed APIs |
 | M1 — First dashboard | Build a dashboard in minutes from a CSV or a dataframe | N01, N02, N04 (Plotly), N05 (caches), N07 (uploads), N13, W06, T02 and N03 (an editable grid), N11 (`composeui run`) | The CSV dashboard uses ordinary ComposeUI objects, stays responsive during queries, and meets the M0 targets |
 | M2 — Shared dashboards | Share a dashboard and reuse more existing code | N14, N15, N04 (Matplotlib), N06, N16, C01, C04 | A dashboard deploys in one command, its links keep its state, and it reads a SQL database |
-| M3 — Scientific workflows | Configure, compute, inspect and export a study | W01–W05, W07–W11, T03, the other C items, N04 (Altair) | The scientific workbench covers each W, T and C item, or records why it waits |
+| M3 — Scientific workflows | Configure, compute, inspect and export a study | W01–W05, W07–W15, T03, the other C items, N04 (Altair) | The scientific workbench covers each W, T and C item, or records why it waits |
 | M4 — Shared apps | Deploy an app for a team | L01, N08, N09, end of N05 and N07 | Restart, isolation, access control and worker-topology tests pass |
 | M5 — Stable release | Depend on the API and extend it | A02, N10, N11, L04, L05, the stability contract | A stable API with deprecations, compatibility fixtures, clean installs, and an extension packaged on its own |
 | M6 — Community | Find a working example for their case | N12: gallery, recipes, more adapters, hosting | Outside developers ship apps and extensions without changes to ComposeUI's internals |
@@ -450,6 +453,10 @@ first.
 | W09 | A code editor with line numbers and Python syntax highlighting | M3 |
 | W10 | A workflow diagram: boxes joined by arrows, enabled or not, a click starting a step | M3 |
 | W11 | A Python console, for apps that offer scripting | M3, enabled by the app only |
+| W12 | Text roles for `LabelView`: title, subtitle, body, caption and muted text, so that a page has headings and descriptions without a `MarkdownView` | M3 |
+| W13 | Sizes in forms: a field's width (short, medium, the whole row), and a compact density for the main view that reduces the gaps and the padding | M3 |
+| W14 | The router's navigation: in a toolbar or in a list on the window's side, pages grouped in sections, and a count or a badge on a page's entry | M3 |
+| W15 | A list row: a primary and a secondary text, an icon, a badge, actions at its end, and a signal when the user activates it, such as a list of recent files | M3, with W01 and W02 |
 
 **Done when:** each widget has typed state and signals, validation where needed, keyboard
 behavior, translations, documentation, and tests of the real widget on the three backends. On
@@ -457,6 +464,13 @@ the web, the element that sent a request is never swapped back, changes elsewher
 OOB updates, and fields keep their `aria-*` links to their label and error. New CSS classes
 need `make css`, which a test checks. A saved state keeps the user's choices, never renderers
 or callbacks.
+
+W12 to W15 are presentation work. They follow principle 7: the core view holds a role or a
+size from an enum, and each backend maps it. Qt uses fonts, size policies and margins, Textual
+bold and dim text and widths in cells, and the web daisyUI classes. A backend that cannot show a
+role shows the default look. For W14, keep the toolbar as the default, and keep `Router`'s
+signals and routes: a side list changes only how the entries show. Build W15 on `ListView`, so
+that a row keeps its view while its record stays.
 
 Editing code (W09) and running it (W11) are separate. For W11, document which process runs
 the code and what it can access. An unrestricted console belongs only in a trusted context.
