@@ -117,8 +117,8 @@ class DataForm(FormView):
 - `browse_text` and `reload_text` name the two buttons in a tooltip and for a screen
   reader. The catalogs translate them.
 
-The state saves `text` and `has_reload`, but not `extensions` or `server_roots`, which the app
-sets.
+The state saves `text` and `has_reload`, but not `extensions`, `server_roots` or `base_folder`,
+which the app sets.
 
 What the "…" button opens:
 
@@ -189,6 +189,46 @@ class StudyForm(FormView):
 Every user of a web app sees the names of the folders and files in the roots. Give only the
 folders that every user may see.
 
+### Relative paths
+
+A relative path, such as `inputs/model.med`, names a file from the process's working folder.
+A study often names its files from its own folder instead, and the app starts elsewhere. Give
+the field `base_folder`, the folder that a relative path starts from:
+
+```python
+from pathlib import Path
+
+from composeui.core.view import FormView, LabelRowFilePathInputView, child, define_view
+
+STUDIES = Path.home() / "studies"
+
+
+@define_view
+class MeshForm(FormView):
+    mesh: LabelRowFilePathInputView = child(
+        LabelRowFilePathInputView,
+        label="Mesh",
+        extensions={"MED": (".med",)},
+        server_roots=(STUDIES,),
+        base_folder=STUDIES / "beam",
+    )
+```
+
+- **`text` keeps the relative path.** `path` reads it from `base_folder`: "inputs/model.med"
+  reads as `~/studies/beam/inputs/model.med`. An absolute path reads as it is.
+- **A picked path inside `base_folder`** shows relative to it, and one outside it shows whole.
+  `path_picked` emits the whole path in both cases.
+- **The roots check the whole path.** On the web, `path` is `None` for a relative path that
+  leads out of `server_roots`, with `..` or a symbolic link.
+- **The "…" button** opens its dialog in `base_folder` while the field is empty, rather than
+  in the first root. On the web, `base_folder` must be inside the roots, else the dialog opens
+  as it would without it.
+- **When `base_folder` changes,** the field keeps its text, and `path` reads it from the new
+  folder.
+
+`FolderPathInputView` and `SavePathInputView` take `base_folder` too. The state does not save
+it: the app sets it, for example from the study that it opens.
+
 ## Folder path input
 
 A `FolderPathInputView` takes the path of a folder, for example where the app writes its
@@ -216,7 +256,7 @@ class OutputForm(FormView):
 - `browse_text` names the "…" button in a tooltip and for a screen reader. The catalogs
   translate it.
 
-The state saves `text`, but not `server_roots`, which the app sets.
+The state saves `text`, but not `server_roots` or `base_folder`, which the app sets.
 
 What the "…" button opens:
 
@@ -263,8 +303,8 @@ class ReportForm(FormView):
 - `browse_text` ("Save as"), `file_name_text`, `save_text`, `replace_question_text` and
   `replace_text` name the button and the texts of the dialog. The catalogs translate them.
 
-The state saves `text`, but not `extensions`, `confirms_overwrite` or `server_roots`, which
-the app sets.
+The state saves `text`, but not `extensions`, `confirms_overwrite`, `server_roots` or
+`base_folder`, which the app sets.
 
 What the "…" button opens:
 

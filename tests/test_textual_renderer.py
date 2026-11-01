@@ -4175,6 +4175,41 @@ async def test_a_file_path_s_picker_opens_in_its_first_server_root_and_can_leave
 
 
 @pytest.mark.asyncio
+async def test_a_file_path_s_picker_opens_in_its_base_folder_and_shows_its_files_relative(
+    tmp_path: Path,
+) -> None:
+    study = tmp_path / "study"
+    (study / "inputs").mkdir(parents=True)
+    view = StudyFileMainView()
+    app = _app_of(view)
+    picked: list[Path] = []
+    view.study.path_picked.connect(picked.append)
+
+    async with app.run_test(size=(100, 30)) as pilot:
+        view.study.base_folder = study
+        field = _field_widget(view.study.renderer)
+        assert isinstance(field, ComposeFilePathInput)
+        await pilot.pause()
+        locations: list[Path] = []
+        shown: list[str] = []
+        for file in (study / "inputs" / "model.py", tmp_path / "elsewhere.py"):
+            await pilot.click(field.browse_button)
+            await pilot.pause()
+            locations.append(Path(app.screen.query_one(DirectoryNavigation).location))
+            app.screen.dismiss(file)  # as the picker's Open does
+            await pilot.pause()
+            shown.append(field.input.value)
+
+    # again: in the folder of the file picked, one outside the base folder shown whole
+    assert locations == [study, study / "inputs"]
+    assert shown == [str(Path("inputs", "model.py")), view.study.text]
+    assert (view.study.text, picked) == (
+        str(tmp_path / "elsewhere.py"),
+        [study / "inputs" / "model.py", tmp_path / "elsewhere.py"],
+    )
+
+
+@pytest.mark.asyncio
 async def test_a_folder_path_s_picker_selects_a_folder_from_its_folder_else_its_root(
     tmp_path: Path,
 ) -> None:

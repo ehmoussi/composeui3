@@ -10,6 +10,10 @@ The notable changes of each release of ComposeUI. The format follows
 
 - `TextAreaView`, a field for several lines of text, and its form rows `RowTextAreaView`
   and `LabelRowTextAreaView`. The pipe form example has a comment in one.
+- `base_folder` on file, folder and save path fields: the folder that a relative path starts
+  from, rather than the process's working folder. `path` and the check of `server_roots` read
+  the text from it, a picked path inside it shows relative to it, and the "…" button opens in
+  it while the field is empty.
 
 ## [0.2.0] - 2026-10-30
 

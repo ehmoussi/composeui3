@@ -593,11 +593,16 @@ def _file_filters(extensions: dict[str, tuple[str, ...]]) -> str:
 
 class PathInputViewLike(InputViewLike, Protocol):
     server_roots: tuple[Path, ...]
+    base_folder: Path | None
     browse_text: str
     path_picked: Signal[Path]
 
     @property
     def path(self) -> Path | None: ...
+
+    def path_text(self, path: Path) -> str: ...
+
+    def start_folder(self) -> Path | None: ...
 
 
 class FilePathInputViewLike(PathInputViewLike, Protocol):
@@ -632,6 +637,7 @@ class _QtPathInputRenderer(QtWidgetRenderer[TPathView, QFilePathField]):
                 "browse_text": self._refresh_browse_text,
                 # read by the dialog each time it opens
                 "server_roots": lambda _view, _rendered_object, _value: None,
+                "base_folder": lambda _view, _rendered_object, _value: None,
                 # the web's list of the server's files only
                 **dict.fromkeys(_SERVER_LIST_TEXTS, lambda _view, _rendered_object, _value: None),
             }
@@ -657,9 +663,10 @@ class _QtPathInputRenderer(QtWidgetRenderer[TPathView, QFilePathField]):
         picked = self.ask(self._rendered_object)
         if picked == "":
             return
+        path = Path(picked)
         # its `textChanged` gives the view the text, and reports it
-        self._rendered_object.line_edit.setText(picked)
-        self._view.path_picked.emit(Path(picked))
+        self._rendered_object.line_edit.setText(self._view.path_text(path))
+        self._view.path_picked.emit(path)
 
     @abstractmethod
     def ask(self, parent: QWidget) -> str:
@@ -688,8 +695,8 @@ class _QtPathInputRenderer(QtWidgetRenderer[TPathView, QFilePathField]):
 class QtFilePathInputRenderer(_QtPathInputRenderer[FilePathInputViewLike]):
     """A field typing a file's path, then a "…" button opening Qt's file dialog.
 
-    The dialog opens in the directory of the field's path, if any, else in the first of the
-    view's `server_roots`.
+    The dialog opens in the directory of the field's path, if any, else in the view's
+    `start_folder`.
     """
 
     def __init__(self, view: FilePathInputViewLike) -> None:
@@ -711,8 +718,8 @@ class QtFilePathInputRenderer(_QtPathInputRenderer[FilePathInputViewLike]):
             self._view.reload_clicked.add_qt_signal(self._rendered_object.reload_button.clicked)
 
     def ask(self, parent: QWidget) -> str:
-        path, roots = self._view.path, self._view.server_roots
-        start = path.parent if path is not None else (roots[0] if roots else None)
+        path = self._view.path
+        start = path.parent if path is not None else self._view.start_folder()
         picked, _selected_filter = QFileDialog.getOpenFileName(
             parent,
             self._view.browse_text,
@@ -748,8 +755,8 @@ _SAVE_LIST_TEXTS = ("file_name_text", "save_text", "replace_text")
 class QtSavePathInputRenderer(_QtPathInputRenderer[SavePathInputViewLike]):
     """A field typing a path to save a file to, then a "…" button opening Qt's save dialog.
 
-    The dialog opens on the field's path, if any, else in the first of the view's
-    `server_roots`, and asks before replacing a file, unless `confirms_overwrite` is off.
+    The dialog opens on the field's path, if any, else in the view's `start_folder`, and
+    asks before replacing a file, unless `confirms_overwrite` is off.
     The path picked gets the first of `extensions` if it has none of them.
     """
 
@@ -764,8 +771,8 @@ class QtSavePathInputRenderer(_QtPathInputRenderer[SavePathInputViewLike]):
         )
 
     def ask(self, parent: QWidget) -> str:
-        path, roots = self._view.path, self._view.server_roots
-        start = path if path is not None else (roots[0] if roots else None)
+        path = self._view.path
+        start = path if path is not None else self._view.start_folder()
         options = QFileDialog.Option(0)
         if not self._view.confirms_overwrite:
             options = QFileDialog.Option.DontConfirmOverwrite
@@ -794,8 +801,7 @@ class QtSavePathInputRenderer(_QtPathInputRenderer[SavePathInputViewLike]):
 class QtFolderPathInputRenderer(_QtPathInputRenderer[PathInputViewLike]):
     """A field typing a folder's path, then a "…" button opening Qt's folder dialog.
 
-    The dialog opens in the field's folder, if any, else in the first of the view's
-    `server_roots`.
+    The dialog opens in the field's folder, if any, else in the view's `start_folder`.
     """
 
     def __init__(self, view: PathInputViewLike) -> None:
@@ -804,8 +810,8 @@ class QtFolderPathInputRenderer(_QtPathInputRenderer[PathInputViewLike]):
         self._refresh_dispatcher["choose_folder_text"] = lambda _view, _object, _value: None
 
     def ask(self, parent: QWidget) -> str:
-        path, roots = self._view.path, self._view.server_roots
-        start = path if path is not None else (roots[0] if roots else None)
+        path = self._view.path
+        start = path if path is not None else self._view.start_folder()
         return QFileDialog.getExistingDirectory(
             parent, self._view.browse_text, "" if start is None else str(start)
         )

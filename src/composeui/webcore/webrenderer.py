@@ -870,13 +870,20 @@ class _ServerFiles:
         return is_its and (self.is_open or event == "browse")
 
     def move(
-        self, event: str, name: str, roots: list[Path], extensions: tuple[str, ...]
+        self,
+        event: str,
+        name: str,
+        roots: list[Path],
+        extensions: tuple[str, ...],
+        *,
+        start: Path | None = None,
     ) -> Path | None:
         """Open, move or close it on `event`; get the path picked, a file's or a folder's.
 
         On "browse", it opens in the folder of `name`, a path, if inside the roots, else
-        in the only root; for a list of folders, in that folder itself. An item that is no
-        longer there, or never was, moves nothing.
+        in the folder `start` if inside them, else in the only root; for a list of
+        folders, in that folder itself. An item that is no longer there, or never was,
+        moves nothing.
         """
         if self._folder is not None and not is_within(self._folder, roots):
             self._folder = None  # the roots changed since
@@ -885,7 +892,7 @@ class _ServerFiles:
             self._replacing = None
         if event == "browse":
             self.is_open = True
-            self._folder = self._start_folder(name, roots)
+            self._folder = self._start_folder(name, roots, start)
             self._name = "" if self.kind != "save" or name.strip() == "" else Path(name).name
             return None
         if event == "browse-close":
@@ -972,8 +979,10 @@ class _ServerFiles:
     def _keep(self, _name: str, _roots: list[Path], _extensions: tuple[str, ...]) -> None:
         self._replacing = None
 
-    def _start_folder(self, name: str, roots: list[Path]) -> Path | None:
+    def _start_folder(self, name: str, roots: list[Path], folder: Path | None) -> Path | None:
         start = roots[0] if len(roots) == 1 else None
+        if folder is not None and is_within_roots(folder, roots) and folder.expanduser().is_dir():
+            start = folder.expanduser().resolve()
         if name.strip() == "":
             return start
         path = Path(name.strip())
@@ -1150,6 +1159,7 @@ class _ServerFiles:
 
 class PathInputViewLike(InputViewLike, Protocol):
     server_roots: tuple[Path, ...]
+    base_folder: Path | None
     browse_text: str
     parent_folder_text: str
     cancel_text: str
@@ -1160,6 +1170,8 @@ class PathInputViewLike(InputViewLike, Protocol):
 
     @property
     def path(self) -> Path | None: ...
+
+    def path_text(self, path: Path) -> str: ...
 
 
 class FilePathInputViewLike(PathInputViewLike, Protocol):
@@ -1215,6 +1227,8 @@ class _WebPathInputRenderer(_WebTextFieldRenderer[TPathView]):
     def __init__(self, view: TPathView) -> None:
         super().__init__(view)
         self._refresh_dispatcher.update(dict.fromkeys(self._shown_fields, self._mark_dirty))
+        # read as the list opens, and by `path`: the text shown stays the same
+        self._refresh_dispatcher["base_folder"] = lambda _view, _rendered_object, _value: None
         # the user can type any path of the server: `path` then keeps to the roots too
         view._keeps_to_roots = True  # noqa: SLF001
         self._server_files: _ServerFiles | None = None
@@ -1346,7 +1360,11 @@ class _WebPathInputRenderer(_WebTextFieldRenderer[TPathView]):
             name = "" if path is None else str(path)
         self._files.confirms_overwrite = self._confirms_overwrite()
         picked = self._files.move(
-            event, name, resolve_roots(self._view.server_roots), tuple(self.file_types)
+            event,
+            name,
+            resolve_roots(self._view.server_roots),
+            tuple(self.file_types),
+            start=self._view.base_folder,
         )
         # opened or closed: the dialog; else only its list, the dialog left open
         self._mark_part("list" if was_open == self._files.is_open else "dialog")
@@ -1358,7 +1376,7 @@ class _WebPathInputRenderer(_WebTextFieldRenderer[TPathView]):
         return True
 
     def _show_path(self, path: Path) -> None:
-        text = str(path)
+        text = self._view.path_text(path)
         # swapped back: the field shows the path, though its picker sent the request
         self._view.text = text
         self._view.text_changed.emit(text)
