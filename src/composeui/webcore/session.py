@@ -176,7 +176,7 @@ class WebSession(RenderTarget):
                 cell = renderer.file_path_cell(form or {})
                 if cell is None:  # a stale page: the table as it now is
                     return self._respond(functools.partial(renderer.pick_file, None, None))
-                types = renderer.file_types(cell[1])
+                types = renderer.file_types(cell)
             elif isinstance(renderer, (WebActionRenderer, WebFilePathInputRenderer)):
                 types = renderer.file_types
             else:

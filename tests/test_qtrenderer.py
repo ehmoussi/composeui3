@@ -129,6 +129,7 @@ from composeui.qtcore.widgets.qwindowrelease import release_when_hidden
 from examples.pipecatalogue import PipeCatalogueMainView
 from examples.pipechart import PipeChartMainView
 from examples.pipeform import EdgeType, PipeMainView
+from examples.studyinputs import OUTPUT_FOLDER, PATH, StudyInputsMainView
 from tests.bookings import BookingMainView
 from tests.buildings import SiteMainView, styled_site
 from tests.charts import ChartPagesMainView
@@ -2596,6 +2597,64 @@ def test_a_table_s_file_path_dialog_opens_in_its_first_server_root_and_can_leave
     assert asked == [str(tmp_path / "studies")]
     # the app's own machine: a file outside the roots is the cell's path too
     assert view.inputs.rows[0] == ["Mesh", str(tmp_path / "elsewhere.export")]
+
+
+def test_a_table_s_path_by_kind_opens_the_dialog_of_each_row_s_kind_from_the_study(
+    qtbot: QtBot, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    study = tmp_path / "study"
+    view = StudyInputsMainView()
+    view.show_study(study)
+    view.render(RendererType.QT)
+    window = _widget(view)
+    qtbot.addWidget(window)
+    window.resize(800, 400)
+    window.show()
+    qtbot.waitExposed(window)
+    table = _table(view.files)
+    model = table.model()
+    asked: list[tuple[str, str]] = []
+
+    def ask(dialog: str, answer: str) -> Callable[..., object]:
+        def answered(*args: object, **_options: object) -> object:
+            asked.append((dialog, str(args[2])))
+            return answer if dialog == "folder" else (answer, "")
+
+        return answered
+
+    monkeypatch.setattr(
+        QFileDialog, "getOpenFileName", staticmethod(ask("file", str(study / "beam.med")))
+    )
+    monkeypatch.setattr(QFileDialog, "getExistingDirectory", staticmethod(ask("folder", "")))
+    monkeypatch.setattr(
+        QFileDialog, "getSaveFileName", staticmethod(ask("save", str(study / "out")))
+    )
+
+    def click_button(row: int) -> None:
+        cell = table.visualRect(model.index(row, PATH))
+        position = QPoint(cell.right() - 4, cell.center().y())
+        qtbot.mouseClick(table.viewport(), Qt.MouseButton.LeftButton, pos=position)
+
+    for row in range(3):
+        click_button(row)
+
+    assert asked == [
+        ("file", str(study / "inputs")),
+        ("folder", str(study / "inputs" / "materials")),
+        ("save", str(study / "report.txt")),
+    ]
+    # picked inside the study: relative to it; the save path's extension added
+    paths = [cells[PATH] for cells in view.files.rows]
+    assert paths[0::2] == ["beam.med", "out.txt"]
+    # a kind changed: the cell's dialog follows, and a kind without a widget is typed only
+    model.setData(model.index(0, 1), OUTPUT_FOLDER)
+    click_button(0)
+    assert asked[-1] == ("folder", str(study / "beam.med"))
+    model.setData(model.index(1, 1), "Notes")
+    click_button(1)
+    assert len(asked) == 4
+    assert model.flags(model.index(1, PATH)) & Qt.ItemFlag.ItemIsEditable
+    assert view.files.rows[1][1:] == ["Notes", "inputs/materials"]
 
 
 def test_a_table_s_file_path_is_picked_in_qt_s_dialog_or_typed(

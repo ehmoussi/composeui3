@@ -97,6 +97,12 @@ the option for the web (extra `web`, the default).
 - **Read a relative path from the study's folder with `base_folder`**, not the process's
   working folder: `path` reads the text from it, and a path picked inside it stays relative.
   See https://ehmoussi.github.io/composeui/user-guide/widgets.html#relative-paths
+- **Pick a path by the row's kind with `CellWidget.path_by(kind_column, editors)`**, when
+  one column holds files to read, folders and files to write: `editors` maps the kind
+  column's text to `CellWidget.file_path`, `folder_path` or `save_path`, and the cell's
+  widget follows the kind the user picks. Read a cell's path with
+  `table.cell_widget(row, column).path(text)`.
+  See https://ehmoussi.github.io/composeui/user-guide/tables.html#paths-by-the-rows-kind
 - **Keep the state saveable.** `MainView.save_state` writes the views' fields with
   `cattrs`, which handles `datetime.date` and `datetime.datetime` as ISO 8601 text. A new
   field must be serializable, or carry the `OMIT` metadata. Text that the code sets, not

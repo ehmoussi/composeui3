@@ -9,8 +9,9 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from composeui.core.application import BACKEND_VARIABLE
+from composeui.core.application import BACKEND_VARIABLE, Application
 from composeui.core.registry import RendererType
+from examples.studyinputs import PATH, StudyInputsMainView
 from examples.webhello import HelloMainView
 
 if TYPE_CHECKING:
@@ -63,3 +64,24 @@ def test_the_hello_app_s_age_may_be_left_empty() -> None:
     age.run_validator()
 
     assert age.log_message == ""
+
+
+def test_the_study_inputs_read_their_paths_from_the_study_on_the_command_line(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("sys.argv", ["studyinputs", "--study", str(tmp_path)])
+    app = Application(build_main_view=StudyInputsMainView)
+    app.run()
+    files = app.main_view.files
+    widget = files.cell_widget(0, PATH)
+    assert widget is not None
+    assert widget.path(files.rows[0][PATH]) == tmp_path / "inputs" / "mesh.med"
+    # without it: from the folder the app started in
+    monkeypatch.chdir(tmp_path / "..")
+    monkeypatch.setattr("sys.argv", ["studyinputs"])
+    app = Application(build_main_view=StudyInputsMainView)
+    app.run()
+    files = app.main_view.files
+    widget = files.cell_widget(0, PATH)
+    assert widget is not None
+    assert widget.start_folder() == Path.cwd()

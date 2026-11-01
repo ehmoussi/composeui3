@@ -11,6 +11,8 @@ from attrs import Factory
 from composeui.core.application import Application
 from composeui.core.model import RefusedError
 from composeui.core.view import (
+    CellKind,
+    CellWidget,
     ConsoleView,
     FilePathInputView,
     FormView,
@@ -31,6 +33,7 @@ from composeui.core.view import (
     line_styles_after,
     parse_date,
 )
+from examples.studyinputs import INPUT_FILE, OUTPUT_FOLDER, PATH, StudyInputsMainView
 from tests.buildings import SITE
 from tests.console import RunMainView
 from tests.pages import InputsPage
@@ -308,3 +311,43 @@ def test_a_path_field_reads_a_relative_path_from_its_base_folder_and_shows_one_i
     field.text = "inputs/model.med"
     field.base_folder = elsewhere
     assert (field.text, field.path) == ("inputs/model.med", elsewhere / "inputs" / "model.med")
+
+
+def test_a_path_by_kind_cell_takes_its_row_s_kind_s_widget_and_base_folder(tmp_path: Path) -> None:
+    study, own = tmp_path / "study", tmp_path / "own"
+    view = StudyInputsMainView()
+    view.show_study(study)
+    table = view.files
+    table.cell_widgets = {
+        **table.cell_widgets,
+        PATH: CellWidget.path_by(
+            1,
+            {
+                INPUT_FILE: CellWidget.file_path(server_roots=(tmp_path,)),
+                OUTPUT_FOLDER: CellWidget.folder_path(base_folder=own),
+            },
+            base_folder=study,
+        ),
+    }
+    table.rows = [["Mesh", INPUT_FILE, ""], ["Results", OUTPUT_FOLDER, ""], ["Notes", "Text"], []]
+
+    widgets = [table.cell_widget(row, PATH) for row in range(len(table.rows))]
+
+    kinds = [None if widget is None else widget.kind for widget in widgets]
+    assert kinds == [CellKind.FILE_PATH, CellKind.FOLDER_PATH, None, None]
+    mesh, results = widgets[0], widgets[1]
+    assert mesh is not None
+    assert results is not None
+    # the kind's own base folder, else the column's; a dialog opens there
+    assert (mesh.start_folder(), results.start_folder()) == (study, own)
+    assert mesh.path("inputs/mesh.med") == study / "inputs" / "mesh.med"
+    assert mesh.path_text(study / "inputs" / "mesh.med") == str(Path("inputs", "mesh.med"))
+    without_base = CellWidget.file_path(server_roots=(tmp_path,))
+    assert (without_base.start_folder(), CellWidget.save_path().start_folder()) == (tmp_path, None)
+    # the kinds' texts follow the language
+    view.set_language("fr")
+    translated = table.cell_widget(1, PATH)
+    assert translated is not None
+    assert translated.text == "Choisir un dossier"
+    with pytest.raises(ValueError, match="with a COMBOBOX cell"):
+        CellWidget.path_by(1, {"Notes": CellWidget.combobox()})

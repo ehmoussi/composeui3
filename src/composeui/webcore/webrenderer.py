@@ -818,6 +818,13 @@ class _FilesTexts(NamedTuple):
 #: what a list of the server's files picks: a file to open, a folder, or a file to save
 _FilesKind = Literal["file", "folder", "save"]
 
+#: the kind of a path cell, by what its list of the server's files picks
+_PATH_KINDS: Final[dict[_FilesKind, CellKind]] = {
+    "file": CellKind.FILE_PATH,
+    "folder": CellKind.FOLDER_PATH,
+    "save": CellKind.SAVE_PATH,
+}
+
 #: the events picking a path, by what the list picks
 _PICK_EVENTS: Final[dict[str, tuple[str, ...]]] = {
     "file": ("browse-file",),
@@ -2178,6 +2185,7 @@ class TableViewLike(ViewLike, Protocol):
     def mark_text(self, mark: NodeMark) -> str: ...
     def shown_cell_styles(self) -> dict[tuple[int, int], CellStyle]: ...
     def is_checked(self, row: int, column: int) -> bool: ...
+    def cell_widget(self, row: int, column: int) -> CellWidget | None: ...
     def cell_style(self, row: int, column: int) -> CellStyle: ...
     def header_group(self, column: int) -> HeaderGroup | None: ...
     def column_checked(self, column: int) -> bool | None: ...
@@ -2674,8 +2682,7 @@ class WebTableRenderer(WebFilterBarRenderer[TableViewLike]):
     def _whole_html(self, *, oob: bool) -> Markup:
         grid = Markup(' role="grid" aria-multiselectable="true"') if self._is_multiple() else ""
         has_files = any(
-            widget.kind is CellKind.FILE_PATH and widget.server_roots
-            for widget in self._view.cell_widgets.values()
+            widget.kind.is_path and widget.server_roots for widget in self._path_widgets()
         )
         return Markup(
             '<div {root_attributes} class="flex flex-col gap-2">'
@@ -2699,11 +2706,24 @@ class WebTableRenderer(WebFilterBarRenderer[TableViewLike]):
             self._server_files = _ServerFiles(f"{self.widget_id}-files", self.widget_id)
         return self._server_files
 
+    def _path_widgets(self) -> Iterator[CellWidget]:
+        """Get the widgets of the columns, and those of a `CellWidget.path_by`'s kinds."""
+        for widget in self._view.cell_widgets.values():
+            yield widget
+            yield from widget.editors.values()
+
     def _files_widget(self) -> CellWidget | None:
-        """Get the widget of the cell the list of the server's files picks for, if still one."""
+        """Get the widget of the cell the list of the server's files picks for, if still one.
+
+        One of the kind of path the list was opened for: the row's kind may have changed.
+        """
         cell = self._files_cell
-        widget = None if cell is None else self._view.cell_widgets.get(cell[1])
-        if widget is None or widget.kind is not CellKind.FILE_PATH or not widget.server_roots:
+        widget = None if cell is None else self._view.cell_widget(*cell)
+        if (
+            widget is None
+            or widget.kind is not _PATH_KINDS[self._files.kind]
+            or not widget.server_roots
+        ):
             return None
         return widget
 
@@ -2715,6 +2735,11 @@ class WebTableRenderer(WebFilterBarRenderer[TableViewLike]):
             texts.get("cancel", ""),
             texts.get("unreadable_folder", ""),
             texts.get("partial_folder", ""),
+            texts.get("choose_folder", ""),
+            texts.get("file_name", ""),
+            texts.get("save", ""),
+            texts.get("replace_question", ""),
+            texts.get("replace", ""),
         )
 
     def _files_html(self, *, oob: bool = False) -> Markup:
@@ -2920,7 +2945,7 @@ class WebTableRenderer(WebFilterBarRenderer[TableViewLike]):
             ).format(widget_id=self.widget_id, event=event, row=row, column=column)
 
         is_typed = column in self._editable_columns() and self.is_enabled and style.is_enabled
-        widget = self._view.cell_widgets.get(column)
+        widget = self._view.cell_widget(row, column)
         # a file path's, typed in, is a field while edited
         if (
             widget is not None
@@ -3035,8 +3060,8 @@ class WebTableRenderer(WebFilterBarRenderer[TableViewLike]):
                 '<button id="{widget_id}" type="button" class="link'
                 ' link-primary"{click}{disabled}>{text}</button>'
             ).format(widget_id=widget_id, click=click, disabled=disabled, text=text)
-        if widget.kind is CellKind.FILE_PATH:
-            return self._file_path_html(row, column, text, widget, is_editable=is_editable)
+        if widget.kind.is_path:
+            return self._path_html(row, column, text, widget, is_editable=is_editable)
         label = f"{self._view.headers[column]}: {widget.text}"
         return Markup(
             '<span class="flex items-center gap-2"><span class="flex-1">{text}'
@@ -3052,12 +3077,14 @@ class WebTableRenderer(WebFilterBarRenderer[TableViewLike]):
             text2=widget.text,
         )
 
-    def _file_path_html(
+    def _path_html(
         self, row: int, column: int, text: str, widget: CellWidget, *, is_editable: bool
     ) -> Markup:
-        """Render a file path's text, then its "…" button opening the hidden file input.
+        """Render a path's text, then its "…" button: a file's opens the hidden file input.
 
-        With `server_roots`, the button opens the list of the server's files instead.
+        With `server_roots`, the button opens the list of the server's files instead. The
+        browser can't give the page a folder's path, or one to save to: without
+        `server_roots`, such a path is typed, and has no button.
         """
         label = f"{self._view.headers[column]}: {widget.text}"
         widget_id = f"{self.widget_id}-cell-{row}-{column}"
@@ -3075,6 +3102,8 @@ class WebTableRenderer(WebFilterBarRenderer[TableViewLike]):
                 browse=self._post({"event": "browse", "row": str(row), "column": str(column)}),
                 disabled=disabled,
             )
+        if widget.kind is not CellKind.FILE_PATH:
+            return escape(text)
         return Markup(
             '<span class="flex items-center gap-2"><span class="flex-1">{text}</span>'
             '<button id="{widget_id}" type="button" class="btn btn-xs btn-soft"'
@@ -3100,19 +3129,20 @@ class WebTableRenderer(WebFilterBarRenderer[TableViewLike]):
             return None
         return self._widget_cell(form, (CellKind.FILE_PATH,))
 
-    def file_types(self, column: int) -> list[str]:
-        """Get the file types a column's picker offers, e.g. [".csv"]; empty for any."""
-        return _file_types(self._view.cell_widgets[column].extensions)
+    def file_types(self, cell: tuple[int, int]) -> list[str]:
+        """Get the file types a file path cell's picker offers, e.g. [".csv"]; empty for any."""
+        widget = self._view.cell_widget(*cell)
+        assert widget is not None  # a cell `file_path_cell` found
+        return _file_types(widget.extensions)
 
     def file_paths(self) -> set[str]:
         """Get the texts of the file path cells, the paths whose uploads are kept."""
-        columns = [
-            column
-            for column, widget in self._view.cell_widgets.items()
-            if widget.kind is CellKind.FILE_PATH
-        ]
         return {
-            cells[column] for cells in self._view.rows for column in columns if column < len(cells)
+            cells[column]
+            for row, cells in enumerate(self._view.rows)
+            for column in self._view.cell_widgets
+            if column < len(cells)
+            and getattr(self._view.cell_widget(row, column), "kind", None) is CellKind.FILE_PATH
         }
 
     def pick_file(self, cell: tuple[int, int] | None, path: Path | None) -> None:
@@ -3121,7 +3151,9 @@ class WebTableRenderer(WebFilterBarRenderer[TableViewLike]):
         Without a cell, or a path, swap the table back as it now is, e.g. for a stale page.
         """
         if cell is not None and path is not None:
-            self._set_widget_cell(cell, str(path))
+            widget = self._view.cell_widget(*cell)
+            assert widget is not None  # a cell `file_path_cell` found
+            self._set_widget_cell(cell, widget.path_text(path))
         # the picker only uploaded: the cell shows the path once swapped back
         self._mark_dirty(self._view, self.widget_id, self._view.rows)
 
@@ -3201,9 +3233,9 @@ class WebTableRenderer(WebFilterBarRenderer[TableViewLike]):
         cells, text = self._view.rows[cell[0]], form.get("text", "")
         if text == (cells[cell[1]] if cell[1] < len(cells) else ""):
             return
-        widget = self._view.cell_widgets.get(cell[1])
-        if widget is not None and widget.kind is CellKind.FILE_PATH and widget.server_roots:
-            path = Path(text.strip())
+        widget = self._view.cell_widget(*cell)
+        if widget is not None and widget.kind.is_path and widget.server_roots:
+            path = widget.path(text)
             if text.strip() != "" and not is_within_roots(path, widget.server_roots):
                 self._refuse_path(path)
                 return
@@ -3224,18 +3256,27 @@ class WebTableRenderer(WebFilterBarRenderer[TableViewLike]):
             raise RefusedError(str(path))
 
     def _browse(self, event: str, form: Mapping[str, str]) -> None:
-        """Open, move or close a file path cell's list of the server's files, or pick a file."""
+        """Open, move or close a path cell's list of the server's files, or pick a path.
+
+        A file's, a folder's or one to save to, as the cell's widget says when it opens.
+        """
         files = self._files
         if not files.takes(event):
             raise UnsupportedEventError(self, event)
         name = form.get("name", "")
+        start = None
         if event == "browse":
-            cell = self._widget_cell(form, (CellKind.FILE_PATH,))
-            if cell is None or not self._view.cell_widgets[cell[1]].server_roots:
+            cell = self._widget_cell(form, _PATH_KINDS.values())
+            opened = None if cell is None else self._view.cell_widget(*cell)
+            if cell is None or opened is None or not opened.server_roots:
                 return  # a cell a stale page still shows: the table comes back as it is
             self._files_cell = cell
+            files.kind = next(kind for kind, path in _PATH_KINDS.items() if path is opened.kind)
+            files.confirms_overwrite = opened.confirms_overwrite
             cells = self._view.rows[cell[0]]
-            name = cells[cell[1]] if cell[1] < len(cells) else ""
+            text = cells[cell[1]] if cell[1] < len(cells) else ""
+            name = str(opened.path(text)) if text.strip() != "" else ""
+            start = opened.base_folder
         widget = self._files_widget()
         if widget is None:  # its column changed since: nothing to pick for
             files.move("browse-close", "", [], ())
@@ -3247,28 +3288,33 @@ class WebTableRenderer(WebFilterBarRenderer[TableViewLike]):
             name,
             resolve_roots(widget.server_roots),
             tuple(_file_types(widget.extensions)),
+            start=start,
         )
         # opened or closed: the dialog; else only its list, the dialog left open
         self._mark_parts("files-list" if was_open == files.is_open else "files")
         if picked is not None:
-            self._set_widget_cell(self._files_cell, str(picked))
+            self._set_widget_cell(self._files_cell, widget.path_text(picked))
             # unlike a check box's, the cell doesn't show it yet
             self._mark_parts("body")
 
     def _widget_cell(
-        self, form: Mapping[str, str], kinds: tuple[CellKind, ...]
+        self, form: Mapping[str, str], kinds: Iterable[CellKind]
     ) -> tuple[int, int] | None:
         """Get the cell posted, if a shown one of a widget of `kinds` the user can use.
 
-        A stale page may post another.
+        A stale page may post another. A `CellWidget.path_by`'s cell is of its row's kind.
         """
         row, column = form.get("row", ""), form.get("column", "")
         if not row.isdigit() or int(row) not in self._view.shown_rows or not column.isdigit():
             return None
-        widget = self._view.cell_widgets.get(int(column))
-        if widget is None or widget.kind not in kinds or int(column) >= len(self._view.headers):
+        widget = self._view.cell_widget(int(row), int(column))
+        if (
+            widget is None
+            or widget.kind not in tuple(kinds)
+            or int(column) >= len(self._view.headers)
+        ):
             return None
-        is_edit = widget.kind in (CellKind.CHECK_BOX, CellKind.COMBOBOX, CellKind.FILE_PATH)
+        is_edit = widget.kind in (CellKind.CHECK_BOX, CellKind.COMBOBOX) or widget.kind.is_path
         if is_edit and int(column) not in self._view.editable_columns:
             return None
         if not self._view.cell_style(int(row), int(column)).is_enabled:
@@ -3299,6 +3345,11 @@ class WebTableRenderer(WebFilterBarRenderer[TableViewLike]):
                 self._view.rows = replace_cell(rows, *cell, text)
             if len(self._check_all_columns()) > 0:
                 self._mark_parts("head")  # a check-all box follows its column's
+            if any(
+                widget.kind is CellKind.PATH_BY_KIND and widget.kind_column == cell[1]
+                for widget in self._view.cell_widgets.values()
+            ):
+                self._mark_parts("body")  # a path cell's widget follows the row's kind
 
     def _check_all(self, form: Mapping[str, str]) -> None:
         column = self._column(form, self._check_all_columns())
@@ -3321,14 +3372,18 @@ class WebTableRenderer(WebFilterBarRenderer[TableViewLike]):
     def _editable_columns(self) -> list[int]:
         """Get the `editable_columns` the table has a header for, and the user types in.
 
-        Those without a widget, and the file paths.
+        Those without a widget, and the paths.
         """
         widgets = self._view.cell_widgets
         return [
             column
             for column in self._view.editable_columns
             if 0 <= column < len(self._view.headers)
-            and (column not in widgets or widgets[column].kind is CellKind.FILE_PATH)
+            and (
+                column not in widgets
+                or widgets[column].kind.is_path
+                or widgets[column].kind is CellKind.PATH_BY_KIND
+            )
         ]
 
     def _is_multiple(self) -> bool:

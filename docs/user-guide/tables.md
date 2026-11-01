@@ -111,13 +111,26 @@ On a `TableView`, `cell_widgets` maps each column's index to its `CellWidget`.
   `CellWidget.file_path(extensions, server_roots=(studies,))`, the web lists the server's
   files in those folders, as a [field with server roots](widgets.md#files-on-the-server)
   does, instead of uploading a copy.
+- **`CellWidget.folder_path()`** shows a folder's path, then a "…" button that picks a
+  folder, as a [folder path input](widgets.md#folder-path-input) does.
+- **`CellWidget.save_path(extensions)`** shows a path to save a file to, then a "…" button
+  that picks it, as a [save path input](widgets.md#save-path-input) does. The file may not
+  exist yet. The first of `extensions` is added to a name without one of them. With
+  `confirms_overwrite` (on by default), the user agrees to replace a file that exists before
+  it is picked. Picking a path writes nothing: the app writes the file.
+- **`CellWidget.path_by(kind_column, editors)`** picks the path widget of each row by the
+  row's kind (see [Paths by the row's kind](#paths-by-the-rows-kind)).
 
-A check box, a combobox, or a file path changes its cell only when the column is editable.
+The three path widgets take `server_roots` and `base_folder`, as the path inputs do (see
+[Relative paths](widgets.md#relative-paths)). With `base_folder`, a relative path in the
+cell names a path in that folder, and a path picked in it shows relative to it.
+
+A check box, a combobox, or a path changes its cell only when the column is editable.
 Otherwise it only shows the cell, and the "…" button picks nothing. The change is an edit, as
 when the user types in a cell: `cell_edited` emits it, and on a `RecordTableView`,
-`record_edited` too. The user also types in a file path cell, but not in the other cells
-with a widget. On the web, a path typed outside a column's `server_roots` is refused: the
-cell keeps its text, and the status bar says why. `file_texts` holds the texts of the list
+`record_edited` too. The user also types in a path cell, but not in the other cells with a
+widget. On the web, a path typed outside a column's `server_roots` is refused, `..` and
+symbolic links followed: the cell keeps its text, and the status bar says why. `file_texts` holds the texts of the list
 of the server's files and of that message, by what they're for.
 
 A click on a button or a link emits `cell_clicked` with the row and the column. The row
@@ -139,15 +152,16 @@ What each backend shows:
 
 - **Qt** draws a checkable cell, a combobox frame, a push button, or underlined link text.
   A click or F2 on an editable combobox cell opens a `QComboBox`. Space toggles the current
-  check box, or clicks the current button or link. A file path's "…" button, or Space on
-  its cell, opens a `QFileDialog` in the folder of the cell's path, else in the first of
-  its `server_roots`.
+  check box, or clicks the current button or link. A path's "…" button, or Space on its
+  cell, opens a `QFileDialog`: a file, a folder, or a save dialog. It opens on the cell's
+  path, else in its `base_folder`, else in the first of its `server_roots`.
 - **Textual** shows the cell as text: a box (☑ or ☐), the text and ▾, the text and the
   button's text in brackets, or underlined text. A click toggles a box, and so does Space
   on the cursor's row. A click on an editable combobox cell opens a list of its options. A click on
-  a button or a link cell clicks it. A file path shows its text and "[…]". A click on an
-  editable file path cell opens the file picker, in the folder of the cell's path, else in
-  the first of its `server_roots`, and F2's editor types the path. A
+  a button or a link cell clicks it. A path shows its text and "[…]". A click on an
+  editable path cell opens the picker of a file, a folder, or a file to save, on the cell's
+  path, else in its `base_folder`, else in the first of its `server_roots`. F2's editor
+  types the path. A
   check-all header shows its box (▣ when partly checked), and a click on the header
   toggles it instead of sorting.
 - **The web** shows a check box, a `<select>`, a button, or a link-like button. A click on
@@ -156,7 +170,60 @@ What each backend shows:
   path. The session removes a copy when no cell of the table holds its path any more,
   at the table's next upload, and all the copies when it ends. With `server_roots`, the
   button opens the list of the server's files instead, and a file picked there puts its
-  path on the server in the cell.
+  path on the server in the cell. The browser cannot give the page a folder's path, or a
+  path to save to. Without `server_roots`, a folder or a save path cell has no button: the
+  user types the path. With them, the button lists the server's folders, as the
+  [folder](widgets.md#folder-path-input) and [save](widgets.md#save-path-input) path inputs
+  do.
+
+### Paths by the row's kind
+
+A column can hold paths of several kinds, such as a study's files: some are files to read,
+some folders, and some files to write. `CellWidget.path_by` gives the column a path widget
+per kind. The row's kind is the text of another of its cells, such as a combobox's:
+
+```python
+from pathlib import Path
+
+from composeui.core.view import CellWidget, MainView, TableView, child, define_view
+
+STUDY = Path.home() / "studies" / "beam"
+KIND, PATH = 1, 2
+
+
+@define_view
+class StudyFilesMainView(MainView):
+    files: TableView = child(
+        TableView,
+        headers=["Name", "Kind", "Path"],
+        rows=[["Mesh", "Input file", "inputs/mesh.med"], ["Results", "Output folder", "results"]],
+        editable_columns=[KIND, PATH],
+        cell_widgets={
+            KIND: CellWidget.combobox(["Input file", "Output file", "Output folder"]),
+            PATH: CellWidget.path_by(
+                KIND,
+                {
+                    "Input file": CellWidget.file_path({"MED": (".med",)}),
+                    "Output file": CellWidget.save_path({"Text": (".txt",)}),
+                    "Output folder": CellWidget.folder_path(),
+                },
+                base_folder=STUDY,
+            ),
+        },
+    )
+```
+
+- **The row's kind picks the widget.** The "Input file" row's "…" button picks a file, and
+  the "Output folder" row's a folder. When the user changes the kind, the path cell's
+  widget follows: the app does nothing. The path's text stays as it is.
+- **A kind without a widget** shows a plain cell, which the user types in when the column is
+  editable.
+- **`base_folder`** is that of the kinds' widgets that have none of their own.
+- **`cell_widget(row, column)`** gets a cell's widget, the kind's for `path_by`, for
+  example to read its path: `table.cell_widget(row, PATH).path(text)` gives the path that
+  `text` names from `base_folder`. It is `None` for a cell without a widget.
+
+[`studyinputs.py`](../../src/examples/studyinputs.py) lists a study's files this way.
 
 ### How cells and headers look
 

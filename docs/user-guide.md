@@ -73,6 +73,7 @@ not in the package: run them from a clone of the repository (see
   - [A table of records](user-guide/tables.md#a-table-of-records)
     - [Sorting and filtering](user-guide/tables.md#sorting-and-filtering)
     - [Widgets in cells](user-guide/tables.md#widgets-in-cells)
+    - [Paths by the row's kind](user-guide/tables.md#paths-by-the-rows-kind)
     - [How cells and headers look](user-guide/tables.md#how-cells-and-headers-look)
   - [A large table](user-guide/tables.md#a-large-table)
     - [Sorting and filtering a large table](user-guide/tables.md#sorting-and-filtering-a-large-table)

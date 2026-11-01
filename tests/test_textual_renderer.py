@@ -130,6 +130,7 @@ from examples.pipecatalogue import PipeCatalogueMainView, PipeCatalogueModel
 from examples.pipecatalogue import PipeExpander as CataloguePipeExpander
 from examples.pipechart import MEASUREMENTS, PipeChartMainView
 from examples.pipeform import EdgeType, Material, PipeMainView
+from examples.studyinputs import PATH, StudyInputsMainView
 from examples.textual_demo import TextualDemoMainView
 from tests.bookings import BookingMainView
 from tests.buildings import SiteMainView, styled_site
@@ -2345,6 +2346,73 @@ async def test_a_table_s_file_path_picker_opens_in_its_first_server_root(tmp_pat
     assert Path(location) == tmp_path / "studies"
     # the app's own machine: a file outside the roots is the cell's path too
     assert view.inputs.rows[0] == ["Mesh", str(tmp_path / "elsewhere.export")]
+
+
+@pytest.mark.asyncio
+async def test_a_table_s_path_by_kind_opens_the_picker_of_each_row_s_kind_from_the_study(
+    tmp_path: Path,
+) -> None:
+    study = tmp_path / "study"
+    (study / "inputs" / "materials").mkdir(parents=True)
+    (study / "summary.txt").write_text("")
+    view = StudyInputsMainView()
+    view.show_study(study)
+    view.render(RendererType.TEXTUAL)
+    assert isinstance(view.renderer, TextualMainRenderer)
+    app = view.renderer.app
+    assert app is not None
+    assert isinstance(view.files.renderer, TextualWidgetRenderer)
+    box = view.files.renderer.widget
+    assert isinstance(box, ComposeFilterTable)
+    table = box.table
+    opened: list[tuple[str, Path]] = []
+
+    async with app.run_test(size=(140, 40)) as pilot:
+        await pilot.pause()
+        widths = [column.get_render_width(table) for column in table.columns.values()]
+
+        async def browse(row: int, picked: Path | None) -> Screen[Any]:
+            await pilot.click(table, offset=(sum(widths[:PATH]) + 1, row + 1))
+            await pilot.pause()
+            location = app.screen.query_one(DirectoryNavigation).location
+            opened.append((type(app.screen).__name__, Path(location)))
+            app.screen.dismiss(picked)  # as the picker's Open, Select or Save does
+            await pilot.pause()
+            return app.screen
+
+        await browse(0, study / "inputs" / "beam.med")
+        await browse(1, None)
+        question = await browse(2, study / "summary")  # exists, its extension added
+        assert isinstance(question, ReplaceFileScreen)
+        await pilot.press("escape")  # kept
+        await pilot.pause()
+        assert view.files.rows[2][PATH] == "report.txt"
+        question = await browse(2, study / "summary")
+        assert isinstance(question, ReplaceFileScreen)
+        await _click_laid_out(pilot, question.replace_button)
+        await pilot.pause()
+        # the last row's kind picked: its path's picker follows
+        await pilot.click(table, offset=(widths[0] + 1, 4))
+        await pilot.pause()
+        assert isinstance(app.screen, ComposeOptionPicker)
+        await pilot.press("up", "enter")
+        await pilot.pause()
+        await browse(3, study / "totals")  # a new file: at once
+
+    assert opened == [
+        ("FileOpen", study / "inputs"),
+        ("SelectDirectory", study / "inputs" / "materials"),
+        ("FileSave", study),
+        ("FileSave", study),
+        ("FileSave", study),
+    ]
+    paths = [cells[PATH] for cells in view.files.rows]
+    assert paths == [
+        str(Path("inputs", "beam.med")),
+        "inputs/materials",
+        "summary.txt",
+        "totals.txt",
+    ]
 
 
 @pytest.mark.asyncio

@@ -14,6 +14,12 @@ The notable changes of each release of ComposeUI. The format follows
   from, rather than the process's working folder. `path` and the check of `server_roots` read
   the text from it, a picked path inside it shows relative to it, and the "…" button opens in
   it while the field is empty.
+- `CellWidget.folder_path` and `CellWidget.save_path`, a folder's path and a path to save a
+  file to in a table's cells, beside `CellWidget.file_path`. The three take `base_folder`.
+- `CellWidget.path_by`, a path column whose widget is that of each row's kind, the text of
+  another cell of the row: a file, a folder, or a file to save. When the user changes the
+  kind, the widget follows. `TableMixin.cell_widget(row, column)` gets a cell's widget. The
+  study inputs example (`studyinputs.py`) lists a study's files this way.
 
 ## [0.2.0] - 2026-10-30
 

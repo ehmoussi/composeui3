@@ -131,6 +131,7 @@ from examples.pipecatalogue import PipeExpander as CataloguePipeExpander
 from examples.pipechart import MEASUREMENTS, PipeChartMainView
 from examples.pipeform import PipeMainView
 from examples.pipesweep import PipeSweepMainView
+from examples.studyinputs import INPUT_FOLDER, OUTPUT_FILE, PATH, StudyInputsMainView
 from examples.taskview import TaskMainView
 from examples.webhello import Colour, GreetingStyle, HelloApp, HelloMainView, NameRowView
 from tests.bookings import BookingMainView
@@ -1746,6 +1747,70 @@ def test_a_table_s_file_path_with_server_roots_is_picked_among_their_files(
     )
     post("browse-close")
     assert not _shows_files(renderer)
+
+
+def test_a_table_s_path_by_kind_lists_the_study_as_each_row_s_kind_picks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    study, elsewhere = tmp_path / "study", tmp_path / "elsewhere"
+    (study / "inputs" / "materials").mkdir(parents=True)
+    (study / "summary.txt").write_text("")
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)  # the process started in another folder
+    views: list[StudyInputsMainView] = []
+
+    class StudyInputsApp(WebApplication[StudyInputsMainView]):
+        def setup_session(self, main_view: StudyInputsMainView) -> None:
+            main_view.status_bar.timeout = 0
+            main_view.show_study(study)
+            views.append(main_view)
+
+    app = StudyInputsApp(build_main_view=StudyInputsMainView)
+    with _Browser(app.create_starlette_app()) as client:
+        client.get("/")
+        (view,) = views
+        table = view.files
+        renderer = table.renderer
+        assert isinstance(renderer, WebTableRenderer)
+
+        def post(event: str, **values: str) -> str:
+            response = client.post(f"/widget/{renderer.widget_id}", data={"event": event, **values})
+            return response.text
+
+        def path(row: int) -> str:
+            return table.rows[row][PATH]
+
+        # a folder: its list of folders, from the cell's own, picking the folder shown
+        body = post("browse", row="1", column=str(PATH))
+        assert _listed(body, renderer) == [("browse-parent", "")]
+        post("browse-file", name="materials")  # a file's event: not this list's
+        post("browse-parent")
+        post("browse-choose")
+        assert path(1) == "inputs"
+        # a file to save: in the study, the name typed, a file that exists replaced once agreed
+        post("browse", row="2", column=str(PATH))
+        post("browse-save", name="summary")
+        assert path(2) == "report.txt"
+        post("browse-replace")
+        assert path(2) == "summary.txt"
+        # the kind picked: the path cell's widget follows, and the body swaps to show it
+        body = post("pick", row="3", column="1", text=OUTPUT_FILE)
+        assert _find(body, f"{renderer.widget_id}-body") is not None
+        post("browse", row="3", column=str(PATH))
+        post("browse-save", name="totals")
+        assert path(3) == "totals.txt"
+        # typed: from the study, and refused out of it, `..` followed
+        for text, shown in [(str(Path("inputs", "mesh.med")), True), ("../elsewhere/x.med", False)]:
+            for event in ("start_edit", "edit"):
+                post(event, row="0", column=str(PATH), text=text)
+            assert (path(0) == text) == shown, text
+        # without roots, the browser can't give a folder's path: typed, without a button
+        table.cell_widgets = {
+            **table.cell_widgets,
+            PATH: CellWidget.path_by(1, {INPUT_FOLDER: CellWidget.folder_path()}),
+        }
+        cell = _element(renderer.to_html(), f"{renderer.widget_id}-row-1")
+        assert [tag for tag, _attributes in cell.descendants if tag == "button"] == []
 
 
 def test_a_table_s_file_path_typed_outside_its_server_roots_is_refused(
