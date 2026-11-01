@@ -7,21 +7,47 @@ agent reads them for the details.
 
 ## Install the skill
 
-Download the file into the skills directory of your project. For Claude Code:
+Download the file into `.agents/skills/composeui/` in your project, the skills directory
+that many coding agents read:
 
 ```bash
-mkdir -p .claude/skills/composeui
-curl -o .claude/skills/composeui/SKILL.md \
+mkdir -p .agents/skills/composeui
+curl -o .agents/skills/composeui/SKILL.md \
   https://ehmoussi.github.io/composeui/skills/composeui/SKILL.md
 ```
 
-Other agents that read `.agents/skills/` need the same file in `.agents/skills/composeui/`.
+Claude Code reads `.claude/skills/` instead. Make it a symbolic link to `.agents/skills/`,
+so that both directories hold the same files and one download updates them:
+
+```bash
+mkdir -p .claude
+ln -s ../.agents/skills .claude/skills
+```
+
+When `.claude/skills/` already holds skills of its own, link only the ComposeUI skill:
+`ln -s ../../.agents/skills/composeui .claude/skills/composeui`.
+
+On Windows, create the link in a Command Prompt with
+`mklink /D .claude\skills ..\.agents\skills`. It needs Developer Mode or an administrator.
+Git for Windows checks out a link as a link only when `core.symlinks` is `true`.
 
 The site publishes the skill of the `main` branch, which changes with the API. Run the same
 command again to update your copy, for example when you update ComposeUI. The skill names
 the version of ComposeUI that it describes, and the agent compares it with the installed
 one: when ComposeUI is newer, the agent reads the current skill, and tells you to update
 your copy.
+
+When your app installs ComposeUI from a commit of GitHub's `main`, not from a release,
+download the skill of that commit, and download it again when the app moves to a new
+commit:
+
+```bash
+curl -o .agents/skills/composeui/SKILL.md \
+  https://raw.githubusercontent.com/ehmoussi/composeui/<commit>/docs/_site/skills/composeui/SKILL.md
+```
+
+The version of a commit, such as `0.2.1.dev4+g1a2b3c4`, starts with the minor version of
+the previous release. So the agent can't tell from it that the copy is older than the code.
 
 The skill is for the app's code, not for ComposeUI's own: to change ComposeUI, read the
 [technical guide](../technical-guide.md) and `AGENTS.md`.

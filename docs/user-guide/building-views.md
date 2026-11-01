@@ -322,6 +322,96 @@ class MarkdownMainView(MainView):
 
 [`src/examples/markdownviewer.py`](../../src/examples/markdownviewer.py) adds `--markdown`.
 
+## Structure an app
+
+Split a larger app into components: views that each do one part of the work, such as a
+search bar or a history. Each component wires its own views. The main view connects the
+components:
+
+```python
+from attrs import Factory
+
+from composeui.core.application import run
+from composeui.core.signal import Signal
+from composeui.core.view import (
+    ButtonView,
+    HorizontalView,
+    InputView,
+    LabelView,
+    MainView,
+    child,
+    define_view,
+)
+
+
+@define_view
+class SearchBar(HorizontalView):
+    query: InputView = child(InputView, placeholder="Search...")
+    search: ButtonView = child(ButtonView, text="Search", is_enabled=False)
+    searched: Signal[str] = Factory(Signal[str])
+
+    def __attrs_post_init__(self) -> None:
+        super().__attrs_post_init__()
+        self.query.text_edited.connect(self._on_query_edited)
+        self.search.clicked.connect(self._on_search_clicked)
+
+    def _on_query_edited(self, text: str) -> None:
+        self.search.is_enabled = text != ""
+
+    def _on_search_clicked(self) -> None:
+        self.searched.emit(self.query.text)
+
+
+@define_view
+class LastSearch(LabelView):
+    def show_search(self, query: str) -> None:
+        self.text = f"Last search: {query}"
+
+
+@define_view
+class SearchMainView(MainView):
+    app_title = "Search"
+    has_file_menu = False
+
+    search_bar: SearchBar = Factory(SearchBar)
+    last_search: LastSearch = child(LastSearch, text="No search yet")
+
+    def __attrs_post_init__(self) -> None:
+        super().__attrs_post_init__()
+        self.search_bar.searched.connect(self.last_search.show_search)
+
+
+if __name__ == "__main__":
+    run(SearchMainView)
+```
+
+- **A component owns its views and their callbacks.** It connects the signals of its views
+  and sets their validators in its `__attrs_post_init__`. For example, `SearchBar` enables
+  its button when the query has text. Keep in the component the state that only it reads.
+- **A component tells the app with a signal of its own,** a `Signal` field such as
+  `searched`. The component then needs no other component. The state does not save a
+  signal.
+- **The main view connects the components** and does the work of the whole app: the
+  callback of `loaded`, the menus, the toolbars, the dialogs, and the work that reads
+  several components. It does not hold the callback of each button.
+- **A callback that reaches another component asks for `main_view`** (see
+  [Signals inject arguments](core-concepts.md#signals-inject-arguments)). Never keep a parent
+  or another component in a view field: the app reads each view field as a child view, and
+  a view that holds its parent makes the app loop forever as it starts.
+- **Keep the state in the views and in the model,** not in a module or class variable. On
+  the web, each session builds its own main view, but all the users share a module or class
+  variable.
+- **Keep the data and the slow work out of the views.** Do not import a view in the
+  [model](sqlite-model.md) or in the functions of the [jobs](threads.md).
+- **Define each view at module level,** not in a function. With
+  `from __future__ import annotations`, `attrs` and `cattrs` read the types of the fields
+  from the module. A large component can have its own module. Call `run` in the program's
+  module, under `if __name__ == "__main__":`.
+
+Split by the work that a component does, not by its number of lines. When a callback of the
+main view only calls a method of a component, move the connection into the component too.
+To test a component alone, see [Test a component](testing.md#test-a-component).
+
 ## Saving and loading state
 
 Save and Open in the File menu save and open the study, in a file with the `extension` of the
